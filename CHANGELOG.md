@@ -10,6 +10,12 @@ Pour mettre à jour votre installation, voir la section « Mettre à jour l'appl
 
 ## [Non publié]
 
+## [1.2.1] - 2026-11-05
+
+#### Ajouté
+
+- Fichier `AGENTS.md` pour installer ou modifier le projet avec un assistant de code : étapes, vérifications, ce qu'il doit demander (zone, clés) et ce qu'il ne doit jamais lire ni exposer.
+
 ## [1.2.0] - 2026-11-05
 
 #### Ajouté

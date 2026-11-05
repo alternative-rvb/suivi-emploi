@@ -19,6 +19,8 @@ npm run demo
 
 Ouvrez ensuite http://localhost:3100. La démo travaille sur une base temporaire, qui est effacée quand vous l'arrêtez avec `Ctrl+C` : elle ne touche jamais à vos vraies données.
 
+Vous préférez qu'un assistant de code (Claude Code, Codex, Cursor...) fasse l'installation ? Ouvrez le dossier cloné avec lui et demandez-lui d'installer le projet : il lit [AGENTS.md](AGENTS.md), qui décrit les étapes, ce qu'il doit vous demander (votre zone, vos clés) et ce qu'il ne doit jamais toucher.
+
 #### Prérequis
 
 - Node.js 24 ou plus (`node -v` pour vérifier), avec npm. [nvm](https://github.com/nvm-sh/nvm) permet de l'installer sans toucher au Node du système.
