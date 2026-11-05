@@ -1,0 +1,19 @@
+# Données personnelles : jamais versionnées
+suivi.db
+suivi.db-*
+data/
+# Dossier de travail local (exports de candidatures, brouillons)
+.tmp/
+
+# Secrets : jamais versionnés
+.env
+
+# Fichiers générés
+node_modules/
+dist/
+
+# Captures et journaux du serveur MCP Playwright
+.playwright-mcp/
+
+# Contexte personnel : candidature réelle, profil, chemins locaux (skill)
+.claude/skills/

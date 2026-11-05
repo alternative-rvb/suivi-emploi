@@ -1,0 +1,38 @@
+name: Signaler un bug
+description: Quelque chose ne fonctionne pas comme prévu
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Merci de prendre le temps de signaler ce problème. N'indiquez aucune donnée personnelle (nom, coordonnées, contenu de candidature) dans ce formulaire, il est public.
+  - type: textarea
+    id: etapes
+    attributes:
+      label: Étapes pour reproduire
+      placeholder: "1. Ouvrir l'onglet Offres\n2. Cliquer sur...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: attendu
+    attributes:
+      label: Ce qui était attendu
+    validations:
+      required: true
+  - type: textarea
+    id: obtenu
+    attributes:
+      label: Ce qui s'est passé
+      description: Message d'erreur affiché, capture d'écran si possible (sans donnée personnelle).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version de l'application
+      description: Visible dans package.json ou dans la page Releases.
+      placeholder: "1.0.0"
+  - type: input
+    id: systeme
+    attributes:
+      label: Système et version de Node.js
+      placeholder: "Ubuntu 24.04 sous WSL, Node 24.1"
