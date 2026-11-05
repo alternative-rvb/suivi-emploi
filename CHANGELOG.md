@@ -10,6 +10,13 @@ Pour mettre à jour votre installation, voir la section « Mettre à jour l'appl
 
 ## [Non publié]
 
+## [1.2.0] - 2026-11-05
+
+#### Ajouté
+
+- Sauvegarde complète au démarrage : la variable `SUIVI_SAUVEGARDE_SCRIPT` lance le script de sauvegarde de votre choix (par exemple une copie du projet vers un dossier synchronisé).
+- Politique de sécurité (`SECURITY.md`) : comment signaler une faille de façon privée.
+
 ## [1.1.0] - 2026-11-05
 
 #### Ajouté

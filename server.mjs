@@ -31,6 +31,7 @@ import { ecrirePlateformes, ErreurPlateformes, lirePlateformes, validerPlateform
 import { ecrireTrajets, ErreurTrajets, lireTrajets, validerTrajets } from './lib/trajets.mjs';
 import { ecrireReglages, ErreurReglages, lireReglages, validerReglages } from './lib/reglages.mjs';
 import { exporterBase } from './lib/export-base.mjs';
+import { lancerSauvegarde } from './lib/sauvegarde.mjs';
 import { ecrireStatutEntreprise, ErreurEntreprises, lireSuiviEntreprises } from './lib/entreprises-suivi.mjs';
 import { chercherEntreprises, DISTANCE_DEFAUT, scopeBonneBoite } from './lib/bonneboite.mjs';
 import { chargerMarche } from './lib/marche.mjs';
@@ -53,6 +54,11 @@ const db = ouvrirBase(join(ici, 'suivi.db'));
   if (r.ok) console.log(`Copie de la base : ${r.fichier}`);
   else if (r.raison === 'dossier introuvable') console.warn('Copie de la base ignorée : SUIVI_EXPORT_DIR introuvable.');
 }
+// ANCHOR: sauvegarde complète facultative (SUIVI_SAUVEGARDE_SCRIPT), en arrière-plan, résultat affiché dans la console
+lancerSauvegarde(process.env.SUIVI_SAUVEGARDE_SCRIPT, ici).then(r => {
+  if (r.ok) { if (r.sortie) console.log(r.sortie); }
+  else if (r.raison !== 'désactivé') console.warn(`Sauvegarde ignorée : ${r.raison}`);
+});
 ouvrirAnalyses(db);
 ouvrirSyntheses(db);
 // NOTE: jeton Google hors de suivi.db, pour qu'il ne soit pas recopié dans chaque sauvegarde du jour

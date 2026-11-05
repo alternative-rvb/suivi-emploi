@@ -91,6 +91,7 @@ Tout passe par le fichier `.env` à la racine, jamais versionné. Chaque variabl
 | Activer les candidatures spontanées | `FT_SCOPE_BONNEBOITE` |
 | Activer la carte Marché local | `FT_SCOPE_MARCHE` |
 | Copier la base chaque jour dans un autre dossier | `SUIVI_EXPORT_DIR` |
+| Lancer votre propre script de sauvegarde au démarrage | `SUIVI_SAUVEGARDE_SCRIPT` |
 | Analyser les annonces avec un modèle local | `ANALYSE_PROVIDER` et suivantes |
 
 Après toute modification du `.env`, relancez le serveur.
