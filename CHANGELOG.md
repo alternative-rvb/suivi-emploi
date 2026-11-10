@@ -10,6 +10,12 @@ Pour mettre à jour votre installation, voir la section « Mettre à jour l'appl
 
 ## [Non publié]
 
+## [1.3.1] - 2026-11-10
+
+### Corrigé
+
+- Documentation de référence : la section du schéma de la base renvoie vers `SCHEMA_SQL` de `lib/offres.mjs` au lieu d'un fichier absent du dépôt.
+
 ## [1.3.0] - 2026-11-10
 
 ### Corrigé
