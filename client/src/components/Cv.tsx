@@ -4,9 +4,10 @@ import BarreEtat from './BarreEtat.tsx';
 import { assemblerCv, composerCv, preparerLettre, envoyerReference, lienPdfVersion, pdfCv, supprimerVersionCv } from '../api.ts';
 import { CATEGORIES } from '../constants.ts';
 import { telecharger } from '../exports.ts';
+import { dureeMs } from '../format.ts';
 import { fmtDate, useMemoire } from '../utils.ts';
 import { usePhoto } from '../usePhoto.ts';
-import BlocRepliable from './BlocRepliable.tsx';
+import BlocRepliable, { useDepliage } from './BlocRepliable.tsx';
 import VersionsListe from './VersionsListe.tsx';
 import { contactManquant, majContact } from './Coordonnees.tsx';
 import Select from './Select.tsx';
@@ -75,6 +76,7 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
   useEffect(() => { memoire.assemblage = assemblage?.etat === 'ok' ? assemblage : null; }, [assemblage]);
   const [composeLe, setComposeLe] = useState('');
   const lateral = useRef<HTMLDivElement>(null);
+  const depliage = useDepliage(actif);
   const profil = etat.profil ?? {};
   const contact = profil.contact ?? {};
   // ANCHOR: photo facultative de l'entête (choix mémorisé), possible seulement si une photo est enregistrée dans Profil > Coordonnées
@@ -162,9 +164,9 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
     setEnCours(true); setMessage(''); setErreur('');
     try {
       // NOTE: l'entête saisie à l'instant n'est peut-être pas encore dans le document composé : la version locale prime
-      const { pdf, version } = await pdfCv({ ...resultat.document, photo: photoCv, entete: { ...resultat.document.entete, ...contact, titre: titreCible } }, candidature);
+      const { pdf, version } = await pdfCv({ ...resultat.document, photo: photoCv, entete: { ...resultat.document.entete, ...contact, titre: titreCible } }, candidature, surMesure && assemblage?.etat === 'ok' && assemblage.offre_id === offreId ? 'qwen' : 'algorithme');
       telecharger(version.nom + '.pdf', pdf);
-      setVersions(v => [{ ...version, cible: resultat.document.cible, categorie: resultat.document.categorie, offre_id: resultat.document.offre_id, candidature_id: candidature, cree_le: new Date().toISOString() }, ...v]);
+      setVersions(v => [{ ...version, cible: resultat.document.cible, categorie: resultat.document.categorie, offre_id: resultat.document.offre_id, candidature_id: candidature, cree_le: new Date().toISOString(), origine: surMesure && assemblage?.etat === 'ok' && assemblage.offre_id === offreId ? 'qwen' : 'algorithme' }, ...v]);
       // NOTE: la candidature retient le nom de la version envoyée (champ Version du CV)
       if (candidature) maj(e => ({ candidatures: e.candidatures.map(c => (c.id === candidature ? { ...c, cv: version.nom } : c)) }));
       setMessage(`${version.nom}.pdf téléchargé et enregistré dans les versions.`);
@@ -242,8 +244,8 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
     <div className="cv">
       <div className="cv-haut">
       <div className="cv-lateral" ref={lateral}>
-      <section className={'carte cv-carte' + (actif === 'generique' ? ' cv-actif' : '')} aria-labelledby="cv-cible">
-        <h3 id="cv-cible" className="carte-titre"><FileText size={17} />CV génériques</h3>
+      <BlocRepliable id="cv-generique" titre="CV génériques" Icone={FileText} className={actif === 'generique' ? 'cv-actif' : ''} {...depliage('generique')}
+        resume={optionsCible.find(([v]) => v === cible)?.[1]}>
         <p className="muted small">Un CV par cible (général ou métier), sans offre ni candidature.</p>
         <label className="field">Cible<Select value={cible} onChange={e => { setCible(e.target.value); setActif('generique'); }} options={optionsCible} /></label>
         {actif === 'generique'
@@ -253,10 +255,9 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
           : <button type="button" className="btn btn-ghost small" onClick={() => { setActif('generique'); setRelance(n => n + 1); }}><Eye size={15} />Afficher l'aperçu</button>}
         {actif === 'generique' && retours}
         {actif === 'generique' && blocReglages}
-        {listeVersions('generiques', 'Versions génériques', versionsGeneriques)}
-      </section>
-      <section className={'carte cv-carte' + (actif === 'sur_mesure' ? ' cv-actif' : '')} aria-labelledby="cv-sur-mesure">
-        <h3 id="cv-sur-mesure" className="carte-titre"><FileText size={17} />CV sur mesure</h3>
+      </BlocRepliable>
+      <BlocRepliable id="cv-sur-mesure" titre="CV sur mesure" Icone={FileText} className={actif === 'sur_mesure' ? 'cv-actif' : ''} {...depliage('sur_mesure')}
+        resume={offreId ? optionsOffres.find(([v]) => v === offreId)?.[1] : `Base : ${optionsCible.find(([v]) => v === baseSM)?.[1] ?? ''}`}>
         <p className="muted small">Pour une candidature, éventuellement ciblé sur une offre. Sans offre, il part de la base choisie.</p>
         <label className="field">Offre<ChoixRecherche value={offreId} onChange={e => {
           const id = e.target.value;
@@ -274,7 +275,7 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
                 <button type="button" className="btn btn-ghost small" onClick={() => abandonnerAssemblage(offreId)}>Passer à la composition classique</button></p>
             )}
             {assemblage?.etat === 'ok' && assemblage.offre_id === offreId && (
-              <p className="small"><Sparkles size={14} /> <strong>Choix du modèle</strong> ({assemblage.modele}, {Math.round(assemblage.duree_ms / 1000)} s) : {assemblage.motif || 'métier et compétences choisis.'}
+              <p className="small"><Sparkles size={14} /> <strong>Choix du modèle</strong> ({assemblage.modele}, {dureeMs(assemblage.duree_ms)}) : {assemblage.motif || 'métier et compétences choisis.'}
                 {assemblage.competences_noms.length > 0 && <span className="muted"> Mis en avant : {assemblage.competences_noms.join(', ')}.</span>}</p>
             )}
             {assemblage?.etat === 'abandon' && assemblage.offre_id === offreId && <p className="small muted">Composition classique affichée. Le modèle poursuit en arrière-plan : « Recomposer avec l'IA » reprend son résultat.</p>}
@@ -290,8 +291,7 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
           : <button type="button" className="btn btn-ghost small" onClick={() => { setActif('sur_mesure'); setRelance(n => n + 1); }}><Eye size={15} />Afficher l'aperçu</button>}
         {actif === 'sur_mesure' && retours}
         {actif === 'sur_mesure' && blocReglages}
-        {listeVersions('sur-mesure', 'Versions sur mesure', versionsSurMesure)}
-      </section>
+      </BlocRepliable>
 
       {attenteQwen && (
         <section className="carte" aria-busy="true">
@@ -342,6 +342,9 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
           )}
         </BlocRepliable>
       )}
+      {/* NOTE: historique des exports sous le contrôle, à côté de l'aperçu */}
+      {listeVersions('generiques', 'Versions génériques', versionsGeneriques)}
+      {listeVersions('sur-mesure', 'Versions sur mesure', versionsSurMesure)}
       </div>
       </div>
       </div>

@@ -15,7 +15,7 @@ const CLE = (page: string, t = tranche()) => `suivi.gabarit3.${page}.${t}`;
 const TEXTES = 'h1, h2, h3, h4, h5, p, li, a, button, label, dt, dd, span, b, strong, small, td, th, summary, input, textarea, select';
 // NOTE: boutons, badges, pastilles, champs, avatars : relevés comme des boîtes pleines à leur taille exacte (rayon compris) ; le texte qu'ils contiennent n'est pas dessiné
 const BOITES = 'button, a, span, small, b, i, label, summary, input, textarea, select, img';
-const BLOCS = 'section, article, .carte, .carte-petite, .fiche, .split-liste, .split-detail, .aide, .etats-repli, .bilan-item, .row, .rdv-carte, .auj-groupe';
+const BLOCS = 'section, article, .carte, .bloc-rep, .carte-petite, .fiche, .split-liste, .split-detail, .aide, .etats-repli, .bilan-item, .row, .rdv-carte, .auj-groupe';
 
 export function lireGabarit(page: string): Gabarit | null {
   try {

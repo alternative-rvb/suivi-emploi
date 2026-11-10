@@ -665,8 +665,9 @@ const lireProfil = () => {
 const META_REFERENCE = 'id, fichier, importe_le, pages, length(texte) AS caracteres';
 /** @type {(avecTexte?: boolean) => any} */
 const referenceActuelle = (avecTexte = false) => db.prepare(`SELECT ${avecTexte ? 'id, fichier, importe_le, pages, texte' : META_REFERENCE} FROM cv_references ORDER BY importe_le DESC, rowid DESC LIMIT 1`).get() ?? null;
-const versionFront = r => ({ id: r.id, nom: r.nom, cible: r.cible, categorie: r.categorie, offre_id: r.offre_id, candidature_id: r.candidature_id, reference_id: r.reference_id, cree_le: r.cree_le, ecarts: r.ecarts, avertissements: r.avertissements });
-const listerVersions = () => db.prepare('SELECT * FROM cv_versions ORDER BY cree_le DESC').all().map(versionFront);
+// NOTE: l'auteur d'une version (origine) vit dans le contenu JSON, sans colonne : vide pour les versions d'avant son enregistrement
+const versionFront = r => ({ id: r.id, nom: r.nom, cible: r.cible, categorie: r.categorie, offre_id: r.offre_id, candidature_id: r.candidature_id, reference_id: r.reference_id, cree_le: r.cree_le, ecarts: r.ecarts, avertissements: r.avertissements, origine: r.origine ?? '' });
+const listerVersions = () => db.prepare("SELECT *, json_extract(contenu, '$.origine') AS origine FROM cv_versions ORDER BY cree_le DESC").all().map(versionFront);
 const etatCv = () => ({ profil: lireProfil(), experiences: experiences.tout(), formations: formations.tout(), competences: competences.tout(), projets: projets.tout() });
 
 // ANCHOR: extrait le texte d'un PDF avec pdftotext (poppler-utils) ; en cas d'échec la référence précédente reste en place
@@ -752,13 +753,15 @@ async function produirePdf(d) {
   } catch (e) {
     throw new ErreurHttp(500, `Génération du PDF impossible (${String(e.message ?? e)}) : aucune version enregistrée.`);
   }
+  // NOTE: l'interface envoie algorithme ou qwen ; un appel d'API sans origine vient de Claude
+  const origine = ['algorithme', 'qwen', 'claude'].includes(d.origine) ? d.origine : 'claude';
   const v = { id: nouvelId('v-'), nom: typeof d.nom === 'string' && d.nom.trim() ? d.nom.trim().replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) : nomCv(document), cree_le: new Date().toISOString() };
   transaction(() => {
     db.prepare('INSERT INTO cv_versions (id, nom, cible, categorie, offre_id, candidature_id, reference_id, cree_le, ecarts, avertissements, contenu) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(v.id, v.nom, document.cible, document.categorie, document.offre_id || null, candidature || null, ref?.id ?? null, v.cree_le, controle.ecarts, controle.avertissements, JSON.stringify({ document, controle }));
+      .run(v.id, v.nom, document.cible, document.categorie, document.offre_id || null, candidature || null, ref?.id ?? null, v.cree_le, controle.ecarts, controle.avertissements, JSON.stringify({ document, controle, origine }));
     journaliser(db, { entite: 'cv', id: v.id, libelle: v.nom, action: 'creation' });
   });
-  return { pdf, version: versionFront(db.prepare('SELECT * FROM cv_versions WHERE id = ?').get(v.id)), controle };
+  return { pdf, version: versionFront(db.prepare("SELECT *, json_extract(contenu, '$.origine') AS origine FROM cv_versions WHERE id = ?").get(v.id)), controle };
 }
 
 const TYPES_FICHIER = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
@@ -779,8 +782,8 @@ function supprimerVersion(table, entite, v) {
 const DOSSIER_DONNEES = join(ici, 'data');
 const lireJson = (t, defaut) => { try { return JSON.parse(String(t)); } catch { return defaut; } };
 const brouillonFront = r => ({ cle: r.cle, offre_id: r.offre_id, candidature_id: r.candidature_id, objet: r.objet, destinataire: r.destinataire, texte: r.texte, matrice: validerMatrice(lireJson(r.matrice, {})), origine: r.origine, maj_le: r.maj_le, generation: lireJson(r.generation, {}) });
-const lettreVersionFront = r => ({ id: r.id, nom: r.nom, offre_id: r.offre_id, candidature_id: r.candidature_id, cree_le: r.cree_le, ecarts: r.ecarts, avertissements: r.avertissements });
-const listerLettres = () => db.prepare('SELECT * FROM lettre_versions ORDER BY cree_le DESC').all().map(lettreVersionFront);
+const lettreVersionFront = r => ({ id: r.id, nom: r.nom, offre_id: r.offre_id, candidature_id: r.candidature_id, cree_le: r.cree_le, ecarts: r.ecarts, avertissements: r.avertissements, origine: r.origine ?? '' });
+const listerLettres = () => db.prepare("SELECT *, json_extract(contenu, '$.origine') AS origine FROM lettre_versions ORDER BY cree_le DESC").all().map(lettreVersionFront);
 const lireStyleLettre = () => validerStyle(lireJson(db.prepare("SELECT valeur FROM kv WHERE cle = 'lettre_style'").get()?.valeur, {}));
 const lireMatriceLettre = () => validerMatrice(lireJson(db.prepare("SELECT valeur FROM kv WHERE cle = 'lettre_matrice'").get()?.valeur, {}));
 
@@ -918,7 +921,7 @@ async function exporterLettre(d, format) {
     journaliser(db, { entite: 'lettre_version', id: v.id, libelle: v.nom, action: 'creation' });
     if (c && !c.lettre) modifierCandidature(candidature, { lettre: true });
   });
-  return { fichier, version: lettreVersionFront(db.prepare('SELECT * FROM lettre_versions WHERE id = ?').get(v.id)) };
+  return { fichier, version: lettreVersionFront(db.prepare("SELECT *, json_extract(contenu, '$.origine') AS origine FROM lettre_versions WHERE id = ?").get(v.id)) };
 }
 
 // NOTE: une lettre déjà exportée pour l'offre (sans candidature) suit la candidature créée, comme les CV (rattacherCvs)

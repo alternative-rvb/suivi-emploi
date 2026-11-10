@@ -86,10 +86,10 @@ export const SqPage = () => {
         <div className="topbar-inner sqz">
           <Sq l={40} h={40} />
           <div style={{ display: 'grid', gap: 6 }}><Sq l={110} h={16} /><Sq l={170} h={11} /></div>
-          <div style={{ display: 'flex', gap: 8, flex: 1, justifyContent: 'center' }}>
+          <div className="sq-top-onglets" style={{ display: 'flex', gap: 8, flex: 1, justifyContent: 'center' }}>
             {Array.from({ length: NB_ONGLETS }, (_, i) => <Sq key={i} l={84} h={30} />)}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}><Sq l={70} h={30} /><Sq l={34} h={34} /></div>
+          <div className="sq-top-fin" style={{ display: 'flex', gap: 8 }}><Sq l={70} h={30} /><Sq l={34} h={34} /></div>
         </div>
       </header>
       <main className="shell sqz" aria-busy="true" role="status" aria-label="Chargement de l'application">

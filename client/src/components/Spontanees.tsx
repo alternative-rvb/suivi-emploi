@@ -69,7 +69,7 @@ export default function Spontanees() {
           <h3 className="carte-titre">Chercher</h3>
           <ul>
             <li>Choisissez un métier : un code ROME est interrogé pour chacun.</li>
-            <li>Choisissez un rayon : la distance se compte à vol d'oiseau depuis le premier point de départ de Admin, section Trajets.</li>
+            <li>Choisissez un rayon : la distance se compte à vol d'oiseau depuis le premier point de départ de Profil &gt; Trajets et revenu.</li>
           </ul>
           <h3 className="carte-titre">Lire une ligne</h3>
           <p>Chaque entreprise affiche sa ville, sa distance, son effectif, son secteur et un potentiel d'embauche. Le potentiel est le score d'embauche calculé par La Bonne Boite : plus il est haut, plus l'entreprise a de chances d'embaucher.</p>

@@ -3,12 +3,11 @@ import { useMemo, useState } from 'react';
 import { anneesParCategorie } from '../../../lib/parcours.mjs';
 import { METIERS_CV, TYPES_EXPERIENCE as VALEURS_TYPE } from '../../../lib/listes.mjs';
 import { periodeFormation } from '../../../lib/periode.mjs';
-import { clePuce, normaliserPoids, POIDS_MAX, poidsSuggere, puces } from '../../../lib/cv.mjs';
+import { clePuce, normaliserPoids, puces } from '../../../lib/cv.mjs';
 import { CATEGORIES } from '../constants.ts';
 import ImportLinkedin from './ImportLinkedin.tsx';
 import Select from './Select.tsx';
 import Etiquettes from './Etiquettes.tsx';
-import BlocRepliable from './BlocRepliable.tsx';
 
 // NOTE: valeurs tirées de lib/listes.mjs (celles que le serveur accepte), seuls les libellés vivent ici
 const LIBELLES_TYPE = { salarie: 'Salarié', freelance: 'Freelance', formateur: 'Formateur', autre: 'Autre' };
@@ -37,7 +36,7 @@ export function dureeLisible(debut: string, fin: string) {
 }
 
 // ANCHOR: tri de la frise, en cours d'abord, puis par fin et début les plus récents
-const triFrise = (a, b) => (b.fin === '' ? 1 : 0) - (a.fin === '' ? 1 : 0) || (indice(b.fin) ?? 0) - (indice(a.fin) ?? 0) || (indice(b.debut) ?? 0) - (indice(a.debut) ?? 0);
+export const triFrise = (a, b) => (b.fin === '' ? 1 : 0) - (a.fin === '' ? 1 : 0) || (indice(b.fin) ?? 0) - (indice(a.fin) ?? 0) || (indice(b.debut) ?? 0) - (indice(a.debut) ?? 0);
 
 // ANCHOR: partie Parcours du Profil, façon Malt ou LinkedIn : accroche, expériences en frise (compétences liées), formations et langues en rappel
 export default function Parcours({ etat, maj, allerPartie, ouvrirCompetence }) {
@@ -64,8 +63,6 @@ export default function Parcours({ etat, maj, allerPartie, ouvrirCompetence }) {
   const ouvrir = x => { setEdition(x ? x.id : 'nouvelle'); setBrouillon(x ? { ...VIDE, ...x } : VIDE); setAjoutComp(''); };
   const fermer = () => { setEdition(null); setBrouillon(VIDE); };
   const champ = (cle, valeur) => setBrouillon(b => ({ ...b, [cle]: valeur }));
-  // NOTE: une seule ligne par puce (clé identique = même poids), sinon deux lignes se partageraient le même réglage
-  const lignesPoids = useMemo(() => [...new Map(puces(brouillon.description).map(p => [clePuce(p), p])).values()], [brouillon.description]);
   const valide = brouillon.poste.trim() && (!brouillon.fin || !brouillon.debut || brouillon.fin >= brouillon.debut);
 
   const enregistrer = () => {
@@ -112,35 +109,6 @@ export default function Parcours({ etat, maj, allerPartie, ouvrirCompetence }) {
         </div>
       </div>
       <label className="field">Missions et réalisations<textarea className="input" rows={4} value={brouillon.description} onChange={e => champ('description', e.target.value)} /></label>
-      {lignesPoids.length > 0 && (
-        <BlocRepliable id="poids" memoire="parcours" titre="Poids des puces par CV visé" Icone={SlidersHorizontal}
-          resume={`${lignesPoids.filter(p => brouillon.poids?.[clePuce(p)]).length} / ${lignesPoids.length} pesées`}>
-          <p className="muted small">De 0 à {POIDS_MAX} par métier : le CV place en tête les puces les plus lourdes.</p>
-          <div className="poids-grille" role="table" aria-label="Poids des puces par métier">
-            <div className="poids-ligne poids-entete" role="row">
-              <span role="columnheader">Puce</span>
-              {METIERS_CV.map(m => <span key={m} role="columnheader">{CATEGORIES[m]?.label ?? m}</span>)}
-            </div>
-            {lignesPoids.map(p => (
-              <div key={clePuce(p)} className="poids-ligne" role="row">
-                <span className="poids-puce" role="cell" title={p}>{p}</span>
-                {METIERS_CV.map(m => {
-                  const saisi = brouillon.poids?.[clePuce(p)]?.[m];
-                  return (
-                    <select key={m} className={`input poids-select${saisi === undefined ? ' poids-suggere' : ''}`} value={saisi ?? poidsSuggere(p, m)}
-                      aria-label={`Poids pour ${CATEGORIES[m]?.label ?? m} : ${p}`}
-                      onChange={e => champ('poids', { ...brouillon.poids, [clePuce(p)]: { ...brouillon.poids?.[clePuce(p)], [m]: Number(e.target.value) } })}>
-                      {Array.from({ length: POIDS_MAX + 1 }, (_, n) => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-          <p className="muted small">Les valeurs en gris sont des suggestions tirées des mots du métier : sans poids saisi, le CV garde le tri par mots-clés.</p>
-          <button type="button" className="btn btn-ghost small" onClick={() => champ('poids', Object.fromEntries(lignesPoids.map(p => [clePuce(p), Object.fromEntries(METIERS_CV.map(m => [m, brouillon.poids?.[clePuce(p)]?.[m] ?? poidsSuggere(p, m)]))])))}>Enregistrer les suggestions</button>
-        </BlocRepliable>
-      )}
       <div className="field">
         Compétences mobilisées
         <Etiquettes items={brouillon.competences.map(id => ({ cle: id, libelle: parId.get(id)?.competence ?? id, contenu: parId.get(id)?.competence ?? id }))}
@@ -177,7 +145,12 @@ export default function Parcours({ etat, maj, allerPartie, ouvrirCompetence }) {
       <div className="carte">
         <div className="parcours-entete">
           <h3 className="carte-titre"><Briefcase size={17} aria-hidden="true" />Expériences</h3>
-          {edition === null && <button type="button" className="btn btn-primary small" onClick={() => ouvrir(null)}><Plus size={15} />Ajouter</button>}
+          {edition === null && (
+            <span className="frise-boutons">
+              <button type="button" className="btn btn-ghost small" onClick={() => allerPartie('poids')} title="Profil > Filtrer et optimiser > Poids des puces"><SlidersHorizontal size={15} />Poids des puces</button>
+              <button type="button" className="btn btn-primary small" onClick={() => ouvrir(null)}><Plus size={15} />Ajouter</button>
+            </span>
+          )}
         </div>
         {Object.keys(annees).length > 0 && (
           <p className="parcours-annees small">

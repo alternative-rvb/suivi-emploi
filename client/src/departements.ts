@@ -1,4 +1,4 @@
-// Départements pour les suggestions de la page Admin (code utilisé par l'API France Travail, nom affiché)
+// Départements pour les suggestions de Profil > Recherche d'offres (code utilisé par l'API France Travail, nom affiché)
 export const DEPARTEMENTS = {
   '01': "Ain",
   '02': "Aisne",

@@ -1,4 +1,4 @@
-// ANCHOR: comparaison du salaire ou du TJM d'une offre avec l'attente saisie dans Admin (Trajets)
+// ANCHOR: comparaison du salaire ou du TJM d'une offre avec l'attente saisie dans Profil > Trajets et revenu
 
 export type Remuneration = { montant: number; unite: 'an' | 'jour' };
 

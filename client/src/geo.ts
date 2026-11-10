@@ -71,7 +71,7 @@ export function itineraire(de, vers) {
   return trajets.get(cle);
 }
 
-// ANCHOR: kilomètres d'autoroute à péage d'un trajet (Valhalla, serveur public d'OpenStreetMap), null sans réponse. Estimation : le prix se déduit avec un tarif au km réglé dans Admin.
+// ANCHOR: kilomètres d'autoroute à péage d'un trajet (Valhalla, serveur public d'OpenStreetMap), null sans réponse. Estimation : le prix se déduit avec un tarif au km réglé dans Profil > Trajets et revenu.
 const peages = new Map<any, any>();
 export function kmPeage(de, vers): Promise<number | null> {
   const cle = `${de}|${vers}`;

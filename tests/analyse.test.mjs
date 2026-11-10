@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { fournisseurActif, lancerAnalyse, offresAAnalyser, ouvrirAnalyses, lireAnalyse, resumeAnalyse } = await import('../lib/analyse/index.mjs');
+const { etatAnalyse, fournisseurActif, lancerAnalyse, offresAAnalyser, ouvrirAnalyses, lireAnalyse, resumeAnalyse } = await import('../lib/analyse/index.mjs');
 const { validerReponses, noter, POIDS } = await import('../lib/analyse/questions.mjs');
 const { default: creerOllama } = await import('../lib/analyse/ollama.mjs');
 const { default: creerOpenai } = await import('../lib/analyse/openai-compatible.mjs');
@@ -40,6 +40,13 @@ test('réponses : une citation absente de l\'annonce invalide la valeur chiffré
   // phrase réellement présente dans l'annonce mais qui ne parle pas de diplôme
   const horsSujet = validerReponses({ ...REPONSE, diplome_citation: 'Télétravail 1 jour par semaine' }, ANNONCE);
   assert.equal(horsSujet.verifie.diplome, false);
+});
+
+test('analyse : « ou autodidacte » lève le diplôme exigé, un logiciel absent de l\'annonce est retiré', () => {
+  const annonce = 'Poste en Bac +2. Diplômé ou autodidacte, ce qui compte est ce que vous savez construire. Stack : PostgreSQL et Git.';
+  const r = validerReponses({ ...REPONSE, diplome_exige: true, diplome_citation: 'Diplômé ou autodidacte', logiciels: ['Sage', 'Git', 'PostgreSQL'] }, annonce);
+  assert.equal(r.verifie.diplome, false);
+  assert.deepEqual(r.logiciels, ['Git', 'PostgreSQL']);
 });
 
 test('réponses : valeurs hors liste ramenées à une valeur neutre, objet invalide refusé', () => {
@@ -155,6 +162,26 @@ test('passage : service injoignable arrête tout sans enregistrer, réponses ill
   assert.equal(r3.ok, true);
   assert.equal(r3.faits, 7);
   assert.equal(r3.echecs, 1);
+});
+
+test('passage : suivi détaillé (étape, offre lue, précédente, déclencheur), remis à zéro à la fin', async () => {
+  const db = baseTest(3);
+  const vus = [];
+  let n = 0;
+  const f = faux(async () => {
+    vus.push({ etape: etatAnalyse.etape, rang: etatAnalyse.offre?.rang, titre: Boolean(etatAnalyse.offre?.titre), precedente: etatAnalyse.precedente?.ok ?? null, declencheur: etatAnalyse.declencheur });
+    if (++n === 2) throw new ErreurSync('format', 'x');
+    return REPONSE;
+  }, { async preparer() { vus.push({ etape: etatAnalyse.etape }); } });
+  await lancerAnalyse(db, 'bouton', { fournisseur: f });
+  assert.deepEqual(vus[0], { etape: 'preparation' });
+  assert.deepEqual(vus.slice(1).map(v => [v.etape, v.rang, v.titre, v.precedente, v.declencheur]), [
+    ['lecture', 1, true, null, 'bouton'], ['lecture', 2, true, true, 'bouton'], ['lecture', 3, true, false, 'bouton'],
+  ]);
+  assert.equal(etatAnalyse.enCours, false);
+  assert.equal(etatAnalyse.offre, null);
+  assert.equal(etatAnalyse.etape, '');
+  assert.ok(etatAnalyse.duree_moyenne_ms >= 0);
 });
 
 test('passage : verrou (une seule exécution à la fois) et résumé', async () => {

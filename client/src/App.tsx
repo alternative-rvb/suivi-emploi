@@ -368,7 +368,7 @@ export default function App() {
             </div>
           </section>
         )}
-        {onglet === 'admin' && <Admin />}
+        {onglet === 'admin' && <Admin allerRecherche={() => allerPartieProfil('recherche')} />}
       </main>
       <PiedDePage />
       <Succes progression={progression} />

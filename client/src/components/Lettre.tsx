@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { controlerLettre, ecrireBrouillon, enregistrerMatrice, etatPreparationLettre, exporterLettre, lienVersionLettre, lireBrouillon, preparerLettre, redigerLettre, supprimerVersionLettre } from '../api.ts';
 import { CATEGORIES } from '../constants.ts';
 import { telecharger } from '../exports.ts';
-import BlocRepliable from './BlocRepliable.tsx';
+import { dureeMs } from '../format.ts';
+import BlocRepliable, { useDepliage } from './BlocRepliable.tsx';
 import VersionsListe from './VersionsListe.tsx';
 import ChoixRecherche from './ChoixRecherche.tsx';
 import Select from './Select.tsx';
@@ -20,7 +21,7 @@ const DECLENCHEURS = { auto: 'préparé à l\'arrivée depuis l\'offre', bouton:
 // NOTE: qui a écrit le texte et comment : modèle et déclencheur de la génération, puis la main de l'utilisateur ou de Claude
 const quiComment = (b: LettreBrouillon) => {
   const g = b.generation ?? {};
-  const detail = [g.modele, g.declencheur ? DECLENCHEURS[g.declencheur] : '', g.duree_ms ? `${Math.round(g.duree_ms / 1000)} s` : ''].filter(Boolean).join(', ');
+  const detail = [g.modele, g.declencheur ? DECLENCHEURS[g.declencheur] : '', g.duree_ms ? dureeMs(g.duree_ms) : ''].filter(Boolean).join(', ');
   if (b.origine === 'claude') return 'Claude, réécriture';
   if (b.origine === 'utilisateur') return g.le ? `Vous (à partir de ${g.modele || 'la génération'} du ${dateHeure(g.le)})` : 'Vous';
   return `Modèle local${detail ? ` : ${detail}` : ''}`;
@@ -64,6 +65,7 @@ export default function Lettre({ etat, maj, offres, cible: demande, cibleLue, al
   const [erreur, setErreur] = useState('');
   const [enCours, setEnCours] = useState(false);
   const lateral = useRef<HTMLDivElement>(null);
+  const depliage = useDepliage(actif);
   const contact = etat.profil?.contact ?? {};
   const offre = offres?.find(o => o.id_offre === offreId) ?? null;
   const candidature = etat.candidatures.find(c => c.id === candidatureId) ?? null;
@@ -282,15 +284,14 @@ export default function Lettre({ etat, maj, offres, cible: demande, cibleLue, al
     <div className="cv lettre">
       <div className="cv-haut">
         <div className="cv-lateral" ref={lateral}>
-          <section className={'carte cv-carte' + (generique ? ' cv-actif' : '')} aria-labelledby="lettre-generique">
-            <h3 id="lettre-generique" className="carte-titre"><FileText size={17} />Lettres génériques</h3>
+          <BlocRepliable id="lettre-generique" titre="Lettres génériques" Icone={FileText} className={generique ? 'cv-actif' : ''} {...depliage('generique')} resume={CATEGORIES[metier].label}>
             <p className="muted small">Une lettre type par métier visé, pour une candidature spontanée ou un formulaire. Claude l'écrit et la réécrit à votre demande.</p>
             <label className="field">Métier visé<Select value={metier} onChange={e => { setMetier(e.target.value); setActif('generique'); }} options={METIERS.map(m => [m, CATEGORIES[m].label])} /></label>
             {!generique && <button type="button" className="btn btn-ghost small" onClick={() => setActif('generique')}>Afficher la lettre générique</button>}
-          </section>
+          </BlocRepliable>
 
-          <section className={'carte cv-carte' + (!generique ? ' cv-actif' : '')} aria-labelledby="lettre-cible">
-            <h3 id="lettre-cible" className="carte-titre"><FileText size={17} />Lettre sur mesure</h3>
+          <BlocRepliable id="lettre-sur-mesure" titre="Lettre sur mesure" Icone={FileText} className={!generique ? 'cv-actif' : ''} {...depliage('sur_mesure')}
+            resume={offre ? [offre.titre, offre.entreprise].filter(Boolean).join(' · ') : candidature ? [candidature.poste, candidature.entreprise].filter(Boolean).join(' · ') : 'à choisir'}>
             <p className="muted small">Une lettre par offre ou par candidature, préparée par le modèle local après le CV. Le texte s'enregistre tout seul et reste modifiable à tout moment.</p>
             <label className="field">Offre<ChoixRecherche value={offreId} onChange={e => {
               setActif('sur_mesure');
@@ -309,12 +310,12 @@ export default function Lettre({ etat, maj, offres, cible: demande, cibleLue, al
             {!generique && offreId && (
               <div className="cv-qwen" aria-live="polite">
                 {attente && <p className="small muted"><Sparkles size={14} className="tourne" /> Le modèle local rédige un brouillon, patientez (une à deux minutes)... <button type="button" className="btn btn-ghost small" onClick={abandonner}>Écrire moi-même</button></p>}
-                {redaction?.etat === 'ok' && <p className="small"><Sparkles size={14} /> Brouillon du modèle ({redaction.modele}, {Math.round(redaction.duree_ms / 1000)} s) : à relire, corriger ou faire réécrire par Claude.</p>}
+                {redaction?.etat === 'ok' && <p className="small"><Sparkles size={14} /> Brouillon du modèle ({redaction.modele}, {dureeMs(redaction.duree_ms)}) : à relire, corriger ou faire réécrire par Claude.</p>}
                 {redaction?.etat === 'echec' && <p className="small warn">Rédaction par le modèle impossible ({redaction.erreur}) : écrivez la lettre dans le champ de texte.</p>}
                 {!attente && <button type="button" className="btn btn-ghost small" onClick={rediger}><Sparkles size={15} />{champs.texte.trim() ? 'Refaire un brouillon avec le modèle' : 'Rédiger avec le modèle'}</button>}
               </div>
             )}
-          </section>
+          </BlocRepliable>
 
           {(message || erreur || sansNom || conflit) && (
             <section className="carte cv-carte" aria-label="Exporter la lettre">
@@ -353,15 +354,6 @@ export default function Lettre({ etat, maj, offres, cible: demande, cibleLue, al
               <p className="muted small">Plan, ton, angles d'accroche et formules à éviter : <button type="button" className="lien" onClick={() => allerPartie('modeles')}>Profil &gt; Modèles CV et lettre</button>.</p>
             </BlocRepliable>
           )}
-
-          {/* NOTE: mêmes deux listes que pour le CV : lettres génériques d'un côté, lettres sur mesure (liées à une offre ou à une candidature) de l'autre */}
-          {[['generiques', 'Versions génériques', versions.filter(v => !v.offre_id && !v.candidature_id)], ['surmesure', 'Versions sur mesure', versions.filter(v => v.offre_id || v.candidature_id)]].map(([id, titre, liste]: any) => (
-            <VersionsListe key={id} id={'lettre-versions-' + id} memoire="lettre" titre={titre} versions={liste} candidatures={etat.candidatures} retirer={retirer}
-              fichiers={v => [
-                { href: lienVersionLettre(v.id, 'pdf'), titre: 'Voir le PDF', libelle: `Voir ${v.nom}` },
-                { href: lienVersionLettre(v.id, 'docx'), titre: 'Télécharger en Word', libelle: `Télécharger ${v.nom} en Word`, telecharger: v.nom + '.docx' },
-              ]} />
-          ))}
         </div>
 
         {!cle && <p className="empty">Choisissez une offre ou une candidature pour commencer la lettre sur mesure.</p>}
@@ -405,6 +397,14 @@ export default function Lettre({ etat, maj, offres, cible: demande, cibleLue, al
             {!aVerifier.length && !controle.conseils.length && <p className="small ok-texte"><CheckCircle2 size={14} /> Faits retrouvés et méthode respectée.</p>}
           </BlocRepliable>
         )}
+        {/* NOTE: mêmes deux listes que pour le CV : lettres génériques d'un côté, lettres sur mesure (liées à une offre ou à une candidature) de l'autre */}
+        {[['generiques', 'Versions génériques', versions.filter(v => !v.offre_id && !v.candidature_id)], ['surmesure', 'Versions sur mesure', versions.filter(v => v.offre_id || v.candidature_id)]].map(([id, titre, liste]: any) => (
+          <VersionsListe key={id} id={'lettre-versions-' + id} memoire="lettre" titre={titre} versions={liste} candidatures={etat.candidatures} retirer={retirer}
+            fichiers={v => [
+              { href: lienVersionLettre(v.id, 'pdf'), titre: 'Voir le PDF', libelle: `Voir ${v.nom}` },
+              { href: lienVersionLettre(v.id, 'docx'), titre: 'Télécharger en Word', libelle: `Télécharger ${v.nom} en Word`, telecharger: v.nom + '.docx' },
+            ]} />
+        ))}
           </div>
         )}
       </div>

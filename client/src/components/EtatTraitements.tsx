@@ -1,5 +1,5 @@
 import { CircleAlert, CircleCheck, CircleX, CloudDownload, Sparkles } from 'lucide-react';
-import { dateHeure as heure } from '../format.ts';
+import { dateHeure as heure, dureeMs } from '../format.ts';
 
 const ICONES = { ok: CircleCheck, warn: CircleAlert, ko: CircleX };
 
@@ -14,6 +14,31 @@ export function lireSynchro(synchro, enCours) {
   return { niveau: 'ok', titre: 'Offres récupérées', detail: [sources && `via ${sources}`, d.enBase != null && `${d.enBase} en base`, d.stats?.nouvelles ? `${d.stats.nouvelles} nouvelle(s)` : ''].filter(Boolean).join(', '), quand: d.date };
 }
 
+// ANCHOR: récit du passage d'analyse en cours (ligne 255) : étape, offre lue et depuis quand, résultat de la précédente, temps restant estimé
+const DECLENCHEURS = { synchro: 'après la synchro', bouton: 'à votre demande', 'démarrage': 'au démarrage du serveur' };
+function recitAnalyse(a, modele: string) {
+  const pourquoi = DECLENCHEURS[a.declencheur] ? `Lancée ${DECLENCHEURS[a.declencheur]}${a.debut ? `, il y a ${dureeMs(Date.now() - Date.parse(a.debut))}` : ''}.` : '';
+  const o = a.offre;
+  if (a.etape !== 'lecture' || !o) {
+    return { niveau: 'run', titre: `Analyse IA : démarrage du modèle${modele}`, lignes: [`Vérification que le modèle local répond${a.total ? `, ${a.total} offre(s) à lire` : ''}.`, pourquoi], progression: 0 };
+  }
+  const ecoule = Math.max(0, Date.now() - Date.parse(o.depuis));
+  const p = a.precedente;
+  const moyenne = a.duree_moyenne_ms;
+  const reste = moyenne ? (a.total - o.rang) * moyenne + Math.max(0, moyenne - ecoule) : 0;
+  return {
+    niveau: 'run',
+    titre: `Analyse IA : offre ${o.rang} sur ${a.total}${modele}`,
+    lignes: [
+      `Lecture de « ${o.titre} »${o.entreprise ? ` (${o.entreprise})` : ''} depuis ${dureeMs(ecoule)} : le modèle répond aux questions fermées en citant l'annonce${o.rang === 1 && !p ? ', première réponse plus lente le temps de charger le modèle en mémoire' : ''}.`,
+      p && (p.ok ? `Précédente : « ${p.titre} », citations vérifiées et réponses enregistrées en ${dureeMs(p.duree_ms)}.` : `Précédente : « ${p.titre} », réponse illisible, ignorée (${p.erreur}).`),
+      [`${a.faits} analysée(s)${a.echecs ? `, ${a.echecs} illisible(s)` : ''}`, moyenne && `environ ${dureeMs(moyenne)} par offre`, reste && `reste environ ${dureeMs(reste)}`].filter(Boolean).join(', ') + '.',
+      pourquoi,
+    ].filter(Boolean),
+    progression: a.total ? (o.rang - 1) / a.total : 0,
+  };
+}
+
 export function lireAnalyse(a) {
   if (!a) return null;
   const modele = a.modele ? ` (${a.modele})` : '';
@@ -22,7 +47,7 @@ export function lireAnalyse(a) {
       ? { niveau: 'ko', titre: 'Analyse IA mal configurée', detail: a.erreur }
       : { niveau: 'off', titre: 'Analyse IA désactivée', detail: 'Ajouter ANALYSE_PROVIDER dans le .env pour l\'activer.' };
   }
-  if (a.enCours) return { niveau: 'run', titre: `Analyse IA en cours${modele}`, detail: `${a.faits} sur ${a.total} offre(s)`, progression: a.total ? a.faits / a.total : 0 };
+  if (a.enCours) return recitAnalyse(a, modele);
   const d = a.dernier;
   if (d && !d.ok) return { niveau: 'ko', titre: `Analyse IA en échec${modele}`, detail: `${d.erreur}${d.faits ? ` ${d.faits} offre(s) analysée(s) avant l'arrêt.` : ''}`, quand: d.date };
   if (d?.echecs > 0) return { niveau: 'warn', titre: `Analyse IA partielle${modele}`, detail: `${d.echecs} réponse(s) illisible(s) sur ${d.total}, ${a.analysees} offre(s) analysée(s) au total`, quand: d.date };
@@ -38,6 +63,7 @@ function Etat({ e, Icone }) {
       <span className="etat-texte">
         <span className="etat-titre"><b>{e.titre}</b>{e.quand && <span className="etat-quand">{heure(e.quand)}</span>}</span>
         {e.detail && <span className="etat-detail" title={e.detail}>{e.detail}</span>}
+        {e.lignes?.map((l: string, i: number) => <span key={i} className="etat-detail" title={l}>{l}</span>)}
         {e.progression != null && <span className="etat-barre" aria-hidden="true"><span style={{ width: `${Math.round(e.progression * 100)}%` }} /></span>}
       </span>
     </li>

@@ -17,3 +17,4 @@ dist/
 
 # Contexte personnel : candidature réelle, profil, chemins locaux (skill)
 .claude/skills/
+.vscode/

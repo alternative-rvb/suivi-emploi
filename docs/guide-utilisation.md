@@ -71,13 +71,19 @@ Sur l'accueil, la carte « Marché local » compare pour chaque métier le nombr
 
 Votre parcours (expériences, formations, compétences avec niveaux, projets, langues) vit dans l'onglet Profil. C'est la source de tous vos CV : plus il est complet et précis, meilleurs sont les CV et le score des offres. Vous pouvez importer l'export officiel LinkedIn pour le remplir.
 
+Le menu à gauche du Profil range ses parties en trois étapes, dans l'ordre du travail (sur téléphone, une liste déroulante le remplace) :
+
+- **Renseigner** : Parcours, Coordonnées, Compétences, Projets, Diplômes et certifications, Titres enseignés.
+- **Filtrer et optimiser** : Poids des puces de chaque expérience par CV visé, Recherche d'offres (zones, mots-clés, mots et contrats exclus, employeurs surveillés), Trajets et revenu (points de départ, coût du trajet, salaire et TJM attendus), Modèles CV et lettre, Synthèse et badges.
+- **Autre** : To-do et veille, Bilan, Carte.
+
 #### Contacts et Agenda
 
 Les contacts (recruteurs, anciens collègues) se relient aux offres et aux candidatures. L'agenda affiche vos rendez-vous, et peut se synchroniser avec Google Agenda si vous le connectez dans Admin.
 
 #### Admin
 
-Réglages de la recherche (zones, mots-clés), points de départ des trajets, plateformes qui obligent à recréer un compte, connexion Google Agenda.
+Réglages globaux de l'application, dans l'ordre du chemin des offres : sources d'offres, analyse par l'IA, plateformes qui obligent à recréer un compte, puis connexion Google Agenda. Les réglages qui vous sont propres (recherche, trajets, revenu attendu) sont dans le Profil, étape Filtrer et optimiser.
 
 ## Configuration
 
@@ -117,7 +123,7 @@ Si la nouvelle version change la structure de la base, la mise à jour se fait s
 
 ## Questions fréquentes
 
-**Une offre que je connais n'apparaît pas.** Elle n'est peut-être pas dans la zone ou les mots-clés réglés dans Admin, ou elle a été écartée : cochez « Écartées » dans les filtres. Sinon, ajoutez-la à la main avec « Offre ».
+**Une offre que je connais n'apparaît pas.** Elle n'est peut-être pas dans la zone ou les mots-clés réglés dans Profil > Recherche d'offres, ou elle a été écartée : cochez « Écartées » dans les filtres. Sinon, ajoutez-la à la main avec « Offre ».
 
 **« Serveur injoignable ».** Le serveur n'est pas démarré (`npm start`) ou tourne sur un autre port.
 

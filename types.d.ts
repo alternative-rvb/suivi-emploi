@@ -249,6 +249,8 @@ export interface CvReference { id: string; fichier: string; importe_le: string; 
 export interface CvVersion {
   id: string; nom: string; cible: CibleCv; categorie: string; offre_id: string; candidature_id: string;
   reference_id: string; cree_le: string; ecarts: number; avertissements: number;
+  /** auteur : algorithme, qwen ou claude (vide avant son enregistrement) */
+  origine?: string;
 }
 
 // ANCHOR: lettre de motivation (schéma v23), forme de lib/lettre.mjs et des routes /api/lettre
@@ -274,6 +276,8 @@ export interface ControleLettre {
 }
 export interface LettreVersion {
   id: string; nom: string; offre_id: string | null; candidature_id: string | null; cree_le: string; ecarts: number; avertissements: number;
+  /** auteur du texte : qwen, utilisateur ou claude (vide avant son enregistrement) */
+  origine?: string;
 }
 
 export interface Offre {

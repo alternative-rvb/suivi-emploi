@@ -72,8 +72,8 @@ async function binaire(url: string, options?: RequestInit) {
   return r;
 }
 
-export async function pdfCv(document: CvDocument, candidature_id = '') {
-  const r = await binaire('/api/cv/pdf', envoi('POST', { document, candidature_id: candidature_id || undefined }));
+export async function pdfCv(document: CvDocument, candidature_id = '', origine = 'algorithme') {
+  const r = await binaire('/api/cv/pdf', envoi('POST', { document, candidature_id: candidature_id || undefined, origine }));
   const nombre = (k: string) => Number(r.headers.get(k) ?? 0);
   return {
     pdf: await r.blob(),

@@ -112,6 +112,8 @@ Un lien direct vers un onglet fonctionne avec un fragment : `#auj`, `#offres`, `
 
 La barre d'onglets compte deux groupes : le flux de travail (Aujourd'hui, Offres, Candidatures, CV, Contacts, Agenda) et, à droite, Profil et Admin. Dans le Parcours, une étiquette de compétence ouvre Profil > Compétences avec la recherche remplie.
 
+Le menu latéral du Profil range ses parties en trois groupes : Renseigner (Parcours, Coordonnées, Compétences, Projets, Diplômes et certifications, Titres enseignés), Filtrer et optimiser (Poids des puces, Recherche d'offres, Trajets et revenu, Modèles CV et lettre, Synthèse et badges) et Autre (To-do et veille, Bilan, Carte). Admin ne garde que les réglages globaux de l'application : sources d'offres, analyse par l'IA, plateformes à compte obligatoire et Google Agenda. Ce qui vous est propre (recherche, points de départ, coût du trajet, revenu attendu) se règle dans le Profil.
+
 ## Utilisation
 
 #### Onglet Aujourd'hui
@@ -200,7 +202,7 @@ Le même fournisseur sert à deux analyses ponctuelles, lancées à la demande (
 
 - Profil vu par un RH (en tête de Profil > Synthèse et badges) : le modèle, placé en responsable RH expérimenté, lit le Profil : Coordonnées sans téléphone ni email, Parcours avec accroche, résumé, expériences et années par métier, Compétences avec leurs niveaux, et les seuls diplômes et certifications obtenus (les titres professionnels enseignés sont écartés, le modèle les prenait pour des certifications du candidat). Il dit à quel type de profil cela correspond et pour quelles structures, donne une séniorité, une synthèse, des points forts, ce qu'un recruteur questionnerait en entretien, des métiers visés et des mots-clés. Un point fort dont la preuve ne se retrouve pas mot pour mot dans le Profil est écarté, un mot-clé absent du texte aussi. Le CV de référence (PDF) n'est pas lu.
 - Plateformes à compte obligatoire (onglet Admin) : liste des plateformes qui imposent de recréer un compte pour postuler (par exemple une plateforme de missions freelance). Une offre dont la plateforme, la source, l'employeur ou le lien correspond reçoit une icône dans la liste, une pastille « Compte à créer sur X » dans la fiche et un rappel à l'étape de postulation.
-- Sujets de veille proposés (onglet Admin, au-dessus des réglages de recherche) : le modèle lit les candidatures et les réglages actuels et propose des mots-clés, zones, employeurs surveillés et mots exclus. Une zone ou un employeur doit venir des candidatures, un mot exclu ne peut pas recouvrir un mot-clé, une valeur déjà présente dans les réglages n'est jamais proposée. Les propositions cochées rejoignent le brouillon des réglages, qui s'enregistre ensuite avec le bouton habituel.
+- Suggestions de l'IA pour les listes de recherche (Profil > Recherche d'offres, au-dessus des listes) : le modèle lit les candidatures et les réglages actuels et propose des mots-clés, zones, employeurs surveillés et mots exclus. Une zone ou un employeur doit venir des candidatures, un mot exclu ne peut pas recouvrir un mot-clé, une valeur déjà présente dans les réglages n'est jamais proposée. Les propositions cochées rejoignent le brouillon des réglages, qui s'enregistre ensuite avec le bouton habituel.
 
 Chaque résultat est gardé avec une empreinte des données lues : l'interface signale qu'il est à relancer quand le Profil ou les candidatures ont changé, ou quand `VERSION_SYNTHESE` augmente.
 
@@ -229,7 +231,7 @@ Elles sont dans `lib/offres.mjs`, utilisé par `bin/sync.mjs` et le serveur.
 
 - Les lignes vides sont ignorées.
 - Seules les offres détectées durant les 31 derniers jours (comme la recherche France Travail) sont gardées (constante `JOURS_MAX`). Les offres plus anciennes déjà en base sont supprimées, sauf si une candidature les référence.
-- Seules les zones (départements) réglées dans l'onglet Admin sont retenues.
+- Seules les zones (départements) réglées dans Profil > Recherche d'offres sont retenues.
 - Les titres contenant un mot de la table `exclusions` sont écartés, ainsi que gérant, directeur et expert-comptable.
 - Une offre est dite proche si son département est `SUIVI_DEPARTEMENT_PROCHE` et sa ville figure dans `SUIVI_VILLES_PROCHES` (variables du `.env`, facultatives). Sans ces réglages, aucune offre n'est proche.
 - Distance dans le score (facultatif) : `SUIVI_ORIGINES` donne un ou plusieurs points de départ « latitude,longitude » séparés par des points-virgules, `SUIVI_DEPARTEMENTS_DISTANCE` les départements dont les communes sont chargées pour situer les offres (par défaut `SUIVI_DEPARTEMENT_PROCHE`), et `SUIVI_LIEU_BONUS` un lieu qui ajoute 3 points aux offres situées à 15 km ou moins. L'interface les lit par `GET /api/zone`. Sans `SUIVI_ORIGINES`, le score garde la zone « proche » tout ou rien.

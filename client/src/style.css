@@ -381,7 +381,7 @@ tr:hover .comp-domaine, tr:focus-within .comp-domaine { opacity: 1; }
 .split-liste .sync-bar { margin: 0; flex-wrap: nowrap; }
 .split-liste .sync-bar .search { flex: 1; }
 .split-liste .sync-bar > .btn-primary { margin-left: auto; }
-.split-detail { position: sticky; top: 84px; max-height: calc(100vh - 100px); overflow-y: auto; min-width: 0; }
+.split-detail { position: sticky; top: var(--haut-collant); max-height: calc(100vh - var(--haut-collant) - 16px); overflow-y: auto; min-width: 0; }
 .chips-compact { gap: 6px; }
 .chips-compact .chip { padding: 4px 10px; font-size: 0.8rem; }
 .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: calc(100vh - 330px); overflow-y: auto; padding-right: 4px; }
@@ -448,7 +448,7 @@ tr:hover .comp-domaine, tr:focus-within .comp-domaine { opacity: 1; }
 .aujourdhui { display: grid; gap: 16px; }
 .auj-cols { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
 .auj-principal { display: grid; gap: 16px; min-width: 0; }
-.auj-side { position: sticky; top: 84px; max-height: calc(100vh - 100px); overflow-y: auto; }
+.auj-side { position: sticky; top: var(--haut-collant); max-height: calc(100vh - var(--haut-collant) - 16px); overflow-y: auto; }
 .auj-side .action { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
 .auj-side .action-type { grid-column: 1 / -1; }
 .auj-side .ajout-ligne { flex-wrap: wrap; }
@@ -484,7 +484,30 @@ button.resume-item:hover { border-color: var(--accent); }
 .groupe { display: grid; gap: 6px; }
 .liste-simple { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .liste-simple li { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-.profil-corps { margin-top: 18px; }
+/* ANCHOR: Profil en deux colonnes (ligne 255) : menu latéral groupé et collant, étapes numérotées en intertitres, toutes les parties visibles.
+   Sous 900 px, le menu laisse place à une liste déroulante au-dessus du contenu. */
+.profil { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
+.profil-nav { position: sticky; top: var(--haut-collant); max-height: calc(100vh - var(--haut-collant) - 16px); overflow-y: auto; display: grid; gap: 14px; padding: 4px 0; }
+/* NOTE: petit séparateur entre les groupes, court et discret pour ne pas couper le menu */
+.profil-groupe + .profil-groupe { position: relative; padding-top: 14px; }
+.profil-groupe + .profil-groupe::before { content: ''; position: absolute; top: 0; left: 10px; width: 40px; border-top: 1px solid var(--line-2); }
+.profil-groupe ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.profil-groupe-titre { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; padding: 0 10px; font-size: 0.72rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); }
+.profil-groupe-num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-2); font-size: 0.68rem; color: var(--ink-2); }
+.profil-groupe.actif .profil-groupe-num { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+.profil-lien { width: 100%; display: block; text-align: left; font: inherit; font-size: 0.9rem; color: var(--ink-2); background: none; border: 0; border-left: 2px solid transparent; border-radius: 0 var(--radius-xs) var(--radius-xs) 0; padding: 7px 10px; cursor: pointer; }
+.profil-lien:hover { background: var(--surface-2); color: var(--ink); }
+.profil-lien[aria-current='page'] { border-left-color: var(--accent); background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+.profil-lien:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.profil-choix { display: none; }
+@media (max-width: 900px) {
+  .profil { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .profil-nav { display: none; }
+  .profil-choix { display: block; }
+}
+/* NOTE: squelette d'un bloc repliable fermé, même hauteur que son summary */
+.sq-hauteur { display: grid; }
+.bloc-rep-sq { display: flex; align-items: center; padding: 11px 14px; min-height: 44px; box-sizing: border-box; }
 
 @media (max-width: 960px) {
   .split, .auj-grille { grid-template-columns: 1fr; }
@@ -498,10 +521,16 @@ button.resume-item:hover { border-color: var(--accent); }
   .taches li .input.cell { width: 128px; flex: none; padding: 5px 6px; }
 }
 
-@media (max-width: 860px) {
+/* NOTE: sous 1240 px, les sept onglets, Profil, Admin et le thème ne tiennent plus à côté du logo : les onglets passent sur une seconde ligne */
+/* NOTE: --haut-collant : distance sous la barre du haut (68 px de barre plus 16 px d'air) pour les colonnes collantes, plus grande quand la barre passe sur deux lignes */
+:root { --haut-collant: 84px; }
+@media (max-width: 1240px) {
+  :root { --haut-collant: 144px; }
   .topbar-inner { grid-template-columns: 1fr auto; }
   .tabs { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; overflow-x: auto; }
   .tabs.tabs-reglages { grid-column: auto; grid-row: auto; justify-self: auto; overflow: visible; }
+}
+@media (max-width: 860px) {
   .brand-sous { display: none; }
   .bento { grid-template-columns: repeat(2, 1fr); }
   .grid-2, .add-row { grid-template-columns: 1fr; }
@@ -563,7 +592,6 @@ button.resume-item:hover { border-color: var(--c); background: color-mix(in okla
 .offre-choix-item.actif:not(:disabled) { background: var(--surface-2); border-color: var(--accent); }
 
 /* SECTION: filtres de la veille (Profil) */
-.veille { display: grid; gap: 16px; }
 .veille-etapes { margin: 0; padding-left: 22px; display: grid; gap: 8px; font-size: 0.92rem; line-height: 1.5; }
 .veille-listes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start; }
 /* ANCHOR: réglages de recherche de l'Admin en cartes pleine largeur repliables, pastille de couleur du champ devant le titre */
@@ -1158,6 +1186,7 @@ summary:hover > .chev { border-color: var(--ink); }
 .frise-tete { display: flex; justify-content: space-between; gap: 10px; }
 .frise-tete > div:first-child { display: grid; gap: 2px; min-width: 0; }
 .frise-boutons { display: flex; gap: 2px; flex: none; }
+.parcours-entete .frise-boutons { gap: 8px; flex-wrap: wrap; }
 .frise-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .frise-texte { white-space: pre-line; margin: 6px 0 0; color: var(--ink-2); overflow-wrap: anywhere; }
 .import-li { border-color: var(--accent); }
@@ -1219,7 +1248,7 @@ summary:hover > .chev { border-color: var(--ink); }
 .grille-envoi { align-items: start; }
 /* NOTE: carte dont l aperçu est affiché à droite */
 .cv-carte { display: grid; gap: 10px; }
-.cv-carte.cv-actif { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.cv-actif { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .cv-apercu { position: relative; background: #fff; color: #212121; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px 32px; font-size: 0.86rem; line-height: 1.45; display: grid; gap: 14px; }
 .cv-apercu .muted { color: #5f6368; }
 .cv-apercu header { text-align: center; display: grid; gap: 2px; }
@@ -1291,7 +1320,7 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 /* NOTE: avec les scores à droite, les badges restent en colonne 1 pour ne pas créer de rangée vide sous les scores */
 .row:has(.row-scores) .row-badges { grid-column: 1; }
 
-/* ANCHOR: profil vu par l'IA (accueil) et sujets de veille proposés (Admin), ligne 86 */
+/* ANCHOR: profil vu par l'IA (accueil) et suggestions de l'IA pour la recherche (Profil > Recherche d'offres), ligne 86 */
 .profil-ia-titre { font-weight: 650; margin: 8px 0 4px; }
 .profil-ia-points { margin: 8px 0; padding-left: 1.2em; display: grid; gap: 4px; }
 .profil-ia-mots { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
@@ -1321,7 +1350,8 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 .champ-action .input { flex: 1; min-width: 0; }
 
 /* ANCHOR: Google Agenda (ligne 120) : choix du calendrier dans Admin */
-.agenda-choix { flex: 1 1 260px; min-width: 0; }
+.agenda-choix { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.agenda-choix .select { flex: 1; }
 
 /* ANCHOR: onglet Agenda et mini-calendrier de l'accueil (ligne 121) */
 .agenda { display: grid; gap: 12px; }
@@ -1546,8 +1576,8 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 
 /* ANCHOR: colonnes liste + détail (Offres, Candidatures, Contacts) : même hauteur, calée sur la fenêtre, la liste défile dans l'espace restant */
 @media (min-width: 961px) {
-  .split { --h-split: calc(100vh - 150px); }
-  .split-liste { position: sticky; top: 84px; height: var(--h-split); grid-template-rows: none; display: flex; flex-direction: column; gap: 10px; }
+  .split { --h-split: calc(100vh - var(--haut-collant) - 66px); }
+  .split-liste { position: sticky; top: var(--haut-collant); height: var(--h-split); grid-template-rows: none; display: flex; flex-direction: column; gap: 10px; }
   .split-liste > * { flex: none; }
   .split-liste { overflow: hidden; }
   .split-liste > .rows, .split-liste > .contacts-groupes { flex: 1 1 0; min-height: 0; max-height: none; align-content: start; }
@@ -1709,6 +1739,12 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 .sq-rangee { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .sq-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
 .topbar-inner.sqz { display: flex; align-items: center; gap: 24px; padding-block: 0; height: 68px; box-sizing: border-box; overflow: hidden; }
+/* NOTE: même passage sur deux lignes que la vraie barre (onglets en dessous), même hauteur pour ne rien décaler */
+@media (max-width: 1240px) {
+  .topbar-inner.sqz { flex-wrap: wrap; height: 127px; align-content: center; row-gap: 12px; }
+  .topbar-inner.sqz .sq-top-fin { margin-left: auto; }
+  .topbar-inner.sqz .sq-top-onglets { order: 3; flex-basis: 100%; justify-content: flex-start; overflow: hidden; }
+}
 
 /* ANCHOR: Profil > Modèles CV et lettre > Lettre (bibliothèque de style) */
 .modeles-lettre { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
@@ -1727,7 +1763,7 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 .sq-gabarit { position: relative; }
 .sq-gabarit-bloc { position: absolute; box-sizing: border-box; overflow: hidden; display: grid; align-content: start; gap: 10px; }
 .modeles-lettre-grille { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: start; }
-.apercu-lettre { position: sticky; top: 84px; display: grid; gap: 8px; }
+.apercu-lettre { position: sticky; top: var(--haut-collant); display: grid; gap: 8px; }
 .apercu-page { background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--radius-sm); padding: 12px; display: grid; gap: 8px; }
 .apercu-ligne { margin: 0; font-size: 0.8rem; color: var(--ink-3); }
 .apercu-bloc { border: 1px dashed var(--line-2); border-radius: var(--radius-sm); padding: 6px 8px; display: grid; gap: 4px; opacity: 0.55; }
@@ -1804,6 +1840,8 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 @media (max-width: 960px) { .segments-barre-cv { grid-template-columns: 1fr; } .segments-barre-cv > .segments-slot { grid-column: 1; grid-row: 2; } .segments-gauche { grid-row: 1; } }
 /* NOTE: réglages du CV en deux colonnes (formulaire à gauche, aperçu du haut du CV à droite), mêmes colonnes que l'onglet CV/LM : l'aperçu y garde sa largeur et son échelle */
 .reglages-cv-grille .cv-tiers { width: 100%; max-width: none; margin-left: 0; }
+/* NOTE: à côté du menu latéral du Profil, la colonne de droite devient trop étroite sous 1280 px : l'aperçu passe sous le formulaire, en pleine largeur */
+@media (max-width: 1279px) { .profil .reglages-cv-grille { grid-template-columns: minmax(0, 1fr); } .profil .reglages-cv-grille > .carte { max-width: 560px; } }
 /* NOTE: aperçu de la lettre à droite, sur fond blanc comme une feuille (même en thème sombre : le fond du CV reste blanc aussi), avec ses propres teintes de texte et de traits */
 .modeles-lettre-grille { grid-template-columns: minmax(0, 1fr) 200px; }
 .modeles-lettre-grille > .apercu-lettre { order: 2; }

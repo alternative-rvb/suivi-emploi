@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { CalendrierGoogle, EtatAgenda } from '../../../types';
 import { calendriersAgenda, choisirCalendrier, deconnecterAgenda, etatAgenda, lienConnexionAgenda } from '../api.ts';
 import { fmtDate } from '../utils.ts';
+import { useHauteur } from '../useHauteur.ts';
 import Select from './Select.tsx';
 
 // ANCHOR: résultat du retour de Google (?agenda=connecte ou ?agenda_erreur=...), lu une fois puis retiré de l'adresse
@@ -22,6 +23,8 @@ export default function AgendaAdmin() {
   const [erreur, setErreur] = useState(retour.erreur);
   const [message, setMessage] = useState(retour.connecte ? 'Google Agenda connecté. Choisissez maintenant le calendrier à suivre.' : '');
   const [occupe, setOccupe] = useState(false);
+  // NOTE: hauteur réelle mémorisée, reprise par le squelette pour ne pas pousser les cartes suivantes à l'arrivée de l'état
+  const { ref, hauteur } = useHauteur('admin.agenda', 180, Boolean(etat));
 
   const chargerCalendriers = () => calendriersAgenda().then(setCalendriers).catch(e => { setErreur(e.message); if (e.status === 401) etatAgenda().then(setEtat).catch(() => {}); });
   useEffect(() => { etatAgenda().then(setEtat).catch(e => setErreur(e.message)); }, []);
@@ -46,7 +49,7 @@ export default function AgendaAdmin() {
   };
 
   return (
-    <div className="carte">
+    <div className="carte" ref={ref} style={etat ? undefined : { minHeight: hauteur }}>
       <h3 className="carte-titre"><CalendarDays size={17} aria-hidden="true" />Google Agenda</h3>
       {!etat ? (erreur ? <p className="muted small">{erreur}</p> : <div className="sqz" aria-busy="true" role="status" aria-label="Chargement de l'agenda"><SqLignes n={3} /></div>) : !etat.configure ? (
         <p className="muted small">Non configuré : ajoutez <code>GOOGLE_CLIENT_ID</code> et <code>GOOGLE_CLIENT_SECRET</code> au fichier <code>.env</code> (préparation décrite dans le README), puis relancez le serveur.</p>
@@ -62,6 +65,7 @@ export default function AgendaAdmin() {
         <>
           <p className="small">Connecté{etat.depuis && <> depuis le {fmtDate(etat.depuis.slice(0, 10))}</>}{etat.calendrier_nom ? <>, calendrier suivi : <b>{etat.calendrier_nom}</b>.</> : '.'}</p>
           {!etat.calendrier_id && <p className="warn small">Choisissez le calendrier dont les événements s'affichent sur l'accueil. Un calendrier dédié (« Recherche d'emploi ») garde votre agenda personnel à part.</p>}
+          {/* NOTE: libellé sur la ligne du choix et boutons à la hauteur de la liste, comme les champs de Trajets et revenu */}
           <div className="admin-actions">
             {calendriers ? (
               <label className="field agenda-choix">Calendrier
@@ -69,8 +73,8 @@ export default function AgendaAdmin() {
                   options={[['', 'Aucun'], ...calendriers.map(c => [c.id, c.nom + (c.principal ? ' (principal)' : ''), c.couleur || undefined])]} />
               </label>
             ) : <span className="muted small">Chargement des calendriers...</span>}
-            <button type="button" className="btn btn-ghost small" onClick={() => { setErreur(''); setCalendriers(null); chargerCalendriers(); }} disabled={occupe} title="Relire la liste des calendriers"><RefreshCw size={15} />Actualiser</button>
-            <button type="button" className="btn btn-ghost small" onClick={deconnecter} disabled={occupe}><LogOut size={15} />Déconnecter</button>
+            <button type="button" className="btn btn-ghost" onClick={() => { setErreur(''); setCalendriers(null); chargerCalendriers(); }} disabled={occupe} title="Relire la liste des calendriers"><RefreshCw size={15} />Actualiser</button>
+            <button type="button" className="btn btn-ghost" onClick={deconnecter} disabled={occupe}><LogOut size={15} />Déconnecter</button>
           </div>
         </>
       )}

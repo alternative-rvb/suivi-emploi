@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { chargerTrajets } from '../api.ts';
 import { calculerEcart, libelleEcart } from '../ecart.ts';
 
-// ANCHOR: écart entre le salaire (ou TJM) de l'offre et l'attente saisie dans Admin, du rouge au vert. Sans attente saisie, rien ne s'affiche.
+// ANCHOR: écart entre le salaire (ou TJM) de l'offre et l'attente saisie dans Profil > Trajets et revenu, du rouge au vert. Sans attente saisie, rien ne s'affiche.
 export default function EcartSalaire({ salaire, trajets }: any) {
   const [charge, setCharge] = useState<any>(null);
   useEffect(() => {

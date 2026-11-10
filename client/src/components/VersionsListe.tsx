@@ -1,5 +1,6 @@
 import { Download, Eye, History, Trash2 } from 'lucide-react';
-import { fmtDate } from '../utils.ts';
+const AUTEURS: Record<string, string> = { algorithme: 'Algorithme', qwen: 'Modèle local', claude: 'Claude', utilisateur: 'Vous' };
+const dateHeure = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 import BlocRepliable from './BlocRepliable.tsx';
 
 // ANCHOR: liste repliable des versions exportées (CV et lettres), même présentation : nom, entreprise liée, date, écarts du contrôle, fichiers à rouvrir, suppression
@@ -17,7 +18,7 @@ export default function VersionsListe({ id, memoire, titre, versions, candidatur
           const cand = v.candidature_id && candidatures.find(c => c.id === v.candidature_id);
           return (
             <li key={v.id}>
-              <span><strong>{v.nom}</strong> <span className="muted small">{cand ? `${cand.entreprise}, ` : ''}{fmtDate(v.cree_le.slice(0, 10))}{v.ecarts ? `, ${v.ecarts} écart${v.ecarts > 1 ? 's' : ''}` : ''}</span></span>
+              <span><strong>{v.nom}</strong> <span className="muted small">{cand ? `${cand.entreprise}, ` : ''}{dateHeure(v.cree_le)}{v.origine ? `, ${AUTEURS[v.origine] ?? v.origine}` : ''}{v.ecarts ? `, ${v.ecarts} écart${v.ecarts > 1 ? 's' : ''}` : ''}</span></span>
               <span className="btn-group">
                 {fichiers(v).map(f => f.telecharger
                   ? <a key={f.href + f.titre} className="btn btn-ghost small icon" href={f.href} download={f.telecharger} title={f.titre} aria-label={f.libelle}><Download size={15} /></a>
