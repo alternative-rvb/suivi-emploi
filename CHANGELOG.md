@@ -10,6 +10,12 @@ Pour mettre à jour votre installation, voir la section « Mettre à jour l'appl
 
 ## [Non publié]
 
+## [1.3.3] - 2026-11-12
+
+### Corrigé
+
+- README : les traits du schéma du parcours restent visibles sur fond sombre.
+
 ## [1.3.2] - 2026-11-12
 
 ### Ajouté

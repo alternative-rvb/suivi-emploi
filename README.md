@@ -54,7 +54,7 @@ Détail, piège du double npm sous Windows et liste de ce qui marche sans quoi :
 Voici le parcours d'une candidature, de l'arrivée des offres jusqu'au point de la semaine. La note de chaque étape va de 1 (elle demande du soin) à 5 (un simple geste).
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"textColor": "#000000", "fillType0": "#03A9F4", "fillType1": "#4CAF50", "fillType2": "#FFC107", "fillType3": "#FF9800"}}}%%
+%%{init: {"theme": "base", "themeCSS": "line[stroke=black], .task-line {stroke:#9E9E9E}", "themeVariables": {"arrowheadColor": "#9E9E9E", "textColor": "#000000", "fillType0": "#03A9F4", "fillType1": "#4CAF50", "fillType2": "#FFC107", "fillType3": "#FF9800"}}}%%
 journey
     section Trier
       Actualiser les offres: 4
