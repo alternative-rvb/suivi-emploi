@@ -6,6 +6,16 @@ Tout tourne sur votre ordinateur. Vos données restent dans un seul fichier, `su
 
 ![Page d'accueil](docs/images/accueil.png)
 
+## Sommaire
+
+- [Essayer en 2 minutes](#essayer-en-2-minutes)
+- [Ce que fait l'application](#ce-que-fait-lapplication)
+- [Utiliser l'application pour de vrai](#utiliser-lapplication-pour-de-vrai)
+- [Vos données](#vos-données)
+- [Pour les développeurs](#pour-les-développeurs)
+- [Nouveautés et retours](#nouveautés-et-retours)
+- [Licence et auteur](#licence-et-auteur)
+
 ## Essayer en 2 minutes
 
 Vous n'avez besoin d'aucun compte ni d'aucune clé pour découvrir l'application : une démo avec des données fictives est incluse.

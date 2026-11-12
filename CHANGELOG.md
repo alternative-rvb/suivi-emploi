@@ -10,6 +10,12 @@ Pour mettre à jour votre installation, voir la section « Mettre à jour l'appl
 
 ## [Non publié]
 
+## [1.3.4] - 2026-11-12
+
+### Ajouté
+
+- README : un sommaire cliquable sous l'introduction.
+
 ## [1.3.3] - 2026-11-12
 
 ### Corrigé
