@@ -49,6 +49,30 @@ Détail, piège du double npm sous Windows et liste de ce qui marche sans quoi :
 
 ![Candidatures](docs/images/candidatures.png)
 
+#### De l'offre au bilan
+
+Voici le parcours d'une candidature, de l'arrivée des offres jusqu'au point de la semaine. La note de chaque étape va de 1 (elle demande du soin) à 5 (un simple geste).
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"textColor": "#000000", "fillType0": "#03A9F4", "fillType1": "#4CAF50", "fillType2": "#FFC107", "fillType3": "#FF9800"}}}%%
+journey
+    section Trier
+      Actualiser les offres: 4
+      Lire le score et l'annonce: 3
+      Épingler ou écarter: 5
+    section Postuler
+      Composer le CV sur mesure: 4
+      Écrire la lettre: 2
+      Envoyer le dossier: 4
+    section Suivre
+      Créer la candidature: 5
+      Relancer et noter les échanges: 3
+      Planifier un entretien: 4
+    section Faire le point
+      Lire le bilan: 5
+      Exporter le justificatif: 4
+```
+
 Pour apprendre à s'en servir au quotidien, lisez le [guide d'utilisation](docs/guide-utilisation.md). Le détail de chaque écran, l'API et la base sont dans la [référence complète](docs/reference.md).
 
 ## Utiliser l'application pour de vrai
