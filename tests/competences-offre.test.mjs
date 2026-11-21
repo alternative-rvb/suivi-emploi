@@ -112,6 +112,24 @@ test('candidature : l\'extraction suit la candidature et survit à la purge de l
   assert.equal(lireCompetencesOffre(db, 'o3'), null, 'sans candidature : purgée avec l\'offre');
 });
 
+test('candidature : un autre profil ne remplace ni n\'efface le lien posé (table commune aux profils)', async () => {
+  const db = baseTest();
+  const { avecProfil, creerProfil } = await import('../lib/profils.mjs');
+  db.prepare("INSERT INTO candidatures (id, entreprise, poste, statut, offre_id) VALUES ('cand1', 'ClientABC', 'Comptable', 'en_cours', 'o1')").run();
+  await lancerExtraction(db, 'o1', { fournisseur: faux(async () => BRUT) });
+  const lien = () => db.prepare("SELECT candidature_id FROM offre_competences WHERE id_offre = 'o1'").get().candidature_id;
+  assert.equal(lien(), 'cand1');
+  const autre = /** @type {any} */ (creerProfil(db, { nom: 'Autre' })).id;
+  await avecProfil(autre, async () => {
+    db.prepare("INSERT INTO competences (id, domaine, competence, note, valide, ordre) VALUES ('c900', 'Comptabilité', 'Sage', '', 0, 0)").run();
+    await lancerExtraction(db, 'o1', { fournisseur: faux(async () => BRUT), refaire: true });
+    assert.equal(lien(), 'cand1', 'extraction relancée par un profil sans candidature : lien gardé');
+    db.prepare("INSERT INTO candidatures (id, entreprise, poste, statut, offre_id) VALUES ('cand2', 'ClientABC', 'Comptable', 'en_cours', 'o1')").run();
+    rattacherCandidature(db, 'o1', 'cand2');
+    assert.equal(lien(), 'cand1', 'candidature d\'un autre profil : lien gardé');
+  });
+});
+
 test('rapprochement : « HTML / CSS » est éclaté, déjà au Profil séparément, et les doublons sont écartés', () => {
   const profil = [{ id: 'c1', domaine: 'Web', competence: 'HTML', enseigner: 4, executer: 4 }, { id: 'c2', domaine: 'Web', competence: 'CSS', enseigner: 4, executer: 4 }];
   const r = rapprocher([{ valeur: 'HTML / CSS', citation: 'x', domaine: 'Web' }, { valeur: 'css', citation: 'y', domaine: 'Web' }, { valeur: 'React, Vue', citation: 'z', domaine: 'Web' }], profil);

@@ -1,7 +1,6 @@
 // Tests de l'API Marché du travail, avec un faux fetch. Aucun appel réseau réel.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,11 +18,9 @@ const OFFRES = [valeur('TOFF', 390), valeur('TOFF-CUMUL12MOIS', 1800)];
 const DEMANDEURS = [valeur('A', 160)];
 const reponse = url => json({ libTerritoire: 'BOUCHES-DU-RHONE', listeValeursParPeriode: url.includes('stat-offres') ? OFFRES : DEMANDEURS });
 
-function base() {
-  const db = new DatabaseSync(':memory:');
-  db.exec('CREATE TABLE kv (cle TEXT PRIMARY KEY, valeur TEXT)');
-  return db;
-}
+// NOTE: base complète (profils branchés) : le cache du marché est gardé par profil
+const { ouvrirBase } = await import('../lib/offres.mjs');
+const base = () => ouvrirBase(':memory:');
 
 // Faux fetch : jeton, puis une réponse par appel d'indicateur
 function avec(indicateur, test_) {
@@ -81,12 +78,27 @@ test('historique : 8 derniers trimestres, évolution sur un an au même trimestr
   assert.equal(long.evolution_pct, null);
 });
 
+test('cache : chaque profil garde le sien, passer de l\'un à l\'autre ne relance pas l\'appel', () => avec(reponse, async appels => {
+  const { avecProfil, creerProfil } = await import('../lib/profils.mjs');
+  const db = base();
+  const b = creerProfil(db, { nom: 'Second' }).id;
+  const jour = new Date('2026-11-05T10:00:00Z');
+  await chargerMarche(db, { maintenant: jour });
+  await avecProfil(b, () => chargerMarche(db, { maintenant: jour }));
+  const apres = appels.indicateurs.length;
+  await chargerMarche(db, { maintenant: jour });
+  await avecProfil(b, () => chargerMarche(db, { maintenant: jour }));
+  assert.equal(appels.indicateurs.length, apres, 'les deux caches sont encore valables');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM kv WHERE cle LIKE 'marche_cache:%'").get().n, 2);
+}));
+
 test('chargement : deux appels par métier, corps attendus, résultat gardé pour le jour', () => avec(reponse, async appels => {
   const db = base();
   const r = await chargerMarche(db, { maintenant: new Date('2026-11-05T10:00:00Z') });
   assert.equal(r.actif, true);
   assert.equal(r.territoire, 'BOUCHES-DU-RHONE');
-  assert.deepEqual(r.metiers.map(m => m.rome), ['M1805', 'M1203', 'K2111', 'E1205']);
+  // NOTE: ordre de la liste de métiers (par défaut, les quatre métiers d'avant la v33)
+  assert.deepEqual(r.metiers.map(m => m.rome), ['K2111', 'E1205', 'M1805', 'M1203']);
   assert.equal(appels.indicateurs.length, 8);
   assert.equal(appels.jeton.length, 1);
   assert.match(appels.jeton[0], /offresetdemandesemploi/);

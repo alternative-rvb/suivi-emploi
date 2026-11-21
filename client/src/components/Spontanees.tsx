@@ -3,15 +3,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { chargerEntreprises, chargerSuiviEntreprises, majSuiviEntreprise } from '../api.ts';
 import type { Entreprise, StatutEntreprise, SuiviEntreprises } from '../api.ts';
 import { CATEGORIES } from '../constants.ts';
+import { CATALOGUE, metierDe } from '../../../lib/metiers.mjs';
+import { useMetiers } from '../metiers.ts';
 import { useMemoire } from '../utils.ts';
 import AideModale from './AideModale.tsx';
 import FiltresPastilles from './FiltresPastilles.tsx';
 import { SqListe } from './Squelettes.tsx';
 
-// ANCHOR: un code ROME par métier visé, pour interroger La Bonne Boite
-const METIERS: [string, string][] = [['dev_web', 'M1805'], ['comptabilite', 'M1203'], ['formateur_digital', 'K2111'], ['web_design', 'E1205']];
-// NOTE: libellés courts pour que les quatre métiers tiennent sur une ligne
-const LIBELLES = { dev_web: 'Dev web', comptabilite: 'Comptabilité', formateur_digital: 'Formateur digital', web_design: 'Web design' };
+// NOTE: libellés courts pour que les métiers tiennent sur une ligne, libellé du catalogue sinon
+const LIBELLES_COURTS = { dev_web: 'Dev web', ressources_humaines: 'RH', assistanat: 'Assistanat' };
 const DISTANCES = [20, 30, 50];
 const ETATS: [string, string, string][] = [['a_trier', 'À trier', 'var(--c-grey)'], ['gardee', 'Gardées', 'var(--c-amber)'], ['contactee', 'Contactées', 'var(--c-emerald)'], ['ecartee', 'Écartées', 'var(--c-grey)']];
 const ACTIONS: [StatutEntreprise, string, typeof Bookmark][] = [['gardee', 'Garder', Bookmark], ['contactee', 'Contactée', Send], ['ecartee', 'Écarter', Ban]];
@@ -21,11 +21,18 @@ const statutDe = (suivi: SuiviEntreprises, e: Entreprise) => suivi[e.siret]?.sta
 // ANCHOR: candidatures spontanées (API La Bonne Boite) : entreprises à fort potentiel d'embauche autour du premier point de départ des trajets, hors offres publiées
 // NOTE: la décision (gardée, contactée, écartée) est enregistrée par SIRET côté serveur, rien d'autre de la réponse n'est gardé
 export default function Spontanees() {
-  const [f, setF] = useMemoire('spontanees.filtres', { metier: 'dev_web', distance: 30, etat: 'a_trier' });
+  const [f, setF] = useMemoire('spontanees.filtres', { metier: '', distance: 30, etat: 'a_trier' });
+  // ANCHOR: un code ROME par métier du profil (catalogue de lib/metiers.mjs), pour interroger La Bonne Boite
+  // NOTE: un métier créé sans code ROME ne peut pas être interrogé ; si aucun métier n'en a, tout le catalogue est proposé
+  const { affiches, perso } = useMetiers();
+  const avecRome: [string, string][] = affiches.map(c => [c, metierDe(c, perso)?.rome ?? ''] as [string, string]).filter(([, r]) => r);
+  const METIERS: [string, string][] = avecRome.length ? avecRome : CATALOGUE.map(m => [m.cle, m.rome]);
+  const sansRome = affiches.filter(c => !metierDe(c, perso)?.rome);
+  const choisi = METIERS.some(([m]) => m === f.metier) ? f.metier : METIERS[0][0];
   const [donnees, setDonnees] = useState<{ actif: boolean; depart?: string; total: number; entreprises: Entreprise[] } | null>(null);
   const [suivi, setSuivi] = useState<SuiviEntreprises>({});
   const [erreur, setErreur] = useState('');
-  const rome = METIERS.find(([m]) => m === f.metier)?.[1] ?? METIERS[0][1];
+  const rome = METIERS.find(([m]) => m === choisi)?.[1] ?? METIERS[0][1];
 
   useEffect(() => { chargerSuiviEntreprises().then(r => setSuivi(r.suivi)).catch(e => setErreur(e.message)); }, []);
   useEffect(() => {
@@ -87,10 +94,11 @@ export default function Spontanees() {
       </h2>
       <p className="muted small">Entreprises à fort potentiel d'embauche, hors offres publiées{donnees?.depart ? <>, autour de « {donnees.depart} »</> : null}.</p>
 
+      {sansRome.length > 0 && <p className="muted small">Sans code ROME, non proposé ici : {sansRome.map(c => CATEGORIES[c]?.label ?? c).join(', ')} (code à ajouter dans Profil, bloc « Métiers recherchés »).</p>}
       <div className="chips chips-compact" role="group" aria-label="Métier">
         {METIERS.map(([m]) => (
-          <button key={m} type="button" className={'chip' + (f.metier === m ? ' on' : '')} style={{ '--c': CATEGORIES[m].color } as React.CSSProperties} aria-pressed={f.metier === m} onClick={() => setF({ ...f, metier: m })}>
-            <span className="dot" /><span className="chip-libelle">{LIBELLES[m]}</span>
+          <button key={m} type="button" className={'chip' + (choisi === m ? ' on' : '')} style={{ '--c': CATEGORIES[m].color } as React.CSSProperties} aria-pressed={choisi === m} onClick={() => setF({ ...f, metier: m })}>
+            <span className="dot" /><span className="chip-libelle">{LIBELLES_COURTS[m] ?? CATEGORIES[m].label}</span>
           </button>
         ))}
         <span className="spont-rayon" role="group" aria-label="Rayon">

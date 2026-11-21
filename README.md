@@ -110,18 +110,7 @@ Le fichier `.env` n'est jamais versionné. Chaque variable est commentée dans `
 
 #### 3. Indiquer votre zone (facultatif)
 
-Dans `.env`, deux lignes suffisent pour que l'application marque les offres proches de chez vous :
-
-```text
-SUIVI_DEPARTEMENT_PROCHE=44
-SUIVI_VILLES_PROCHES=Nantes,Saint-Herblain
-```
-
-Pour que le score tienne compte de la distance en kilomètres, ajoutez un ou plusieurs points de départ « latitude,longitude » (clic droit sur une carte en ligne pour les obtenir) :
-
-```text
-SUIVI_ORIGINES=47.2184,-1.5536
-```
+Dans Profil > Trajets et revenu, le bloc « Zone de recherche » marque les offres proches de chez vous (département et villes proches). Pour que le score tienne compte de la distance en kilomètres, ajoutez un ou plusieurs points de départ « latitude,longitude » (clic droit sur une carte en ligne pour les obtenir), ou reprenez ceux de vos trajets. Chaque profil a sa propre zone.
 
 #### 4. Aller plus loin (facultatif)
 

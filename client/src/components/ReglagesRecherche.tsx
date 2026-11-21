@@ -1,6 +1,9 @@
-import { Check, Info, Save, Search, Undo2 } from 'lucide-react';
+import { Check, Gauge, Info, Save, Search, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apercuReglages, chargerOffres, chargerReglages, enregistrerReglages } from '../api.ts';
+import { MALUS_CONTRAT_MAX } from '../../../lib/contrat.mjs';
+import { signalerReglages } from '../optionsScore.ts';
+import Select from './Select.tsx';
 import { CONTRATS } from '../constants.ts';
 import { DEPARTEMENTS } from '../departements.ts';
 import { norm } from '../utils.ts';
@@ -9,6 +12,7 @@ import BlocRepliable from './BlocRepliable.tsx';
 import { Sq, SqCarte } from './Squelettes.tsx';
 import MotsEditables from './MotsEditables.tsx';
 import { useHauteur } from '../useHauteur.ts';
+import MetiersRecherches from './MetiersRecherches.tsx';
 import Veille from './Veille.tsx';
 import VeilleIa from './VeilleIa.tsx';
 
@@ -43,6 +47,40 @@ function suggestionsDepuis(offres) {
 }
 
 const egal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+const MODES = [['emploi', 'Emploi'], ['alternance', 'Alternance'], ['stage', 'Stage']];
+const CHAMPS_SCORE = ['mode', 'malus_contrat', 'km_tous_contrats'];
+
+// ANCHOR: type de recherche et malus de contrat (lib/contrat.mjs) : ne change pas les offres reçues, seulement leur score
+function ReglagesScore({ brouillon, enregistre, onChange }) {
+  const modifie = CHAMPS_SCORE.some(k => brouillon[k] !== enregistre[k]);
+  const nombre = (cle, max) => e => { const n = Math.round(Number(e.target.value)); onChange(cle, Number.isFinite(n) ? Math.min(max, Math.max(0, n)) : 0); };
+  const mode = MODES.find(([v]) => v === brouillon.mode)?.[1] ?? MODES[0][1];
+  return (
+    <BlocRepliable id="score" memoire="recherche" Icone={Gauge} titre="Type de recherche et score"
+      pastille={modifie ? <span className="warn small">modifié</span> : null}
+      resume={`${mode}, malus ${brouillon.malus_contrat} points${brouillon.km_tous_contrats ? ` au-delà de ${brouillon.km_tous_contrats} km` : ' partout'}`}>
+      <div className="muted small">
+        Le mode décide des contrats recherchés. Une offre avec un autre contrat perd des points au score, sans être masquée.
+        <AideModale titre="Type de recherche et score">
+          <p>Ces réglages ne changent pas les offres reçues, seulement leur ordre dans les listes.</p>
+          <ul>
+            <li><b>Emploi</b> : le CDI et le CDD de 12 mois et plus passent, les autres contrats (CDD court, intérim, alternance, stage) perdent des points.</li>
+            <li><b>Alternance</b> : seuls les contrats d'apprentissage et de professionnalisation passent. Le diplôme exigé par une annonce ne coûte plus rien, puisque l'alternance sert à le préparer.</li>
+            <li><b>Stage</b> : seuls les stages passent, et le diplôme exigé ne coûte plus rien non plus.</li>
+            <li><b>Malus</b> : points retirés à une offre dont le contrat n'est pas recherché, de 0 (aucun effet) à {MALUS_CONTRAT_MAX}.</li>
+            <li><b>Distance</b> : le malus ne s'applique qu'aux offres plus loin que cette distance, hors zone proche. À 0, il s'applique partout, même sans distance connue.</li>
+          </ul>
+        </AideModale>
+      </div>
+      <div className="reglages-score">
+        <label className="field">Mode de recherche<Select value={brouillon.mode} options={MODES} onChange={e => onChange('mode', e.target.value)} aria-label="Mode de recherche" /></label>
+        <label className="field">Malus de contrat (points)<input className="input" type="number" min={0} max={MALUS_CONTRAT_MAX} value={brouillon.malus_contrat} onChange={nombre('malus_contrat', MALUS_CONTRAT_MAX)} /></label>
+        <label className="field">Au-delà de (km)<input className="input" type="number" min={0} max={500} step={5} value={brouillon.km_tous_contrats} onChange={nombre('km_tous_contrats', 500)} /></label>
+      </div>
+    </BlocRepliable>
+  );
+}
 
 // ANCHOR: liste de pastilles modifiable avec suggestions. Entrée ou virgule ajoute, plusieurs éléments collés d'un coup sont acceptés.
 function ListeEditable({ champ, valeurs, onChange, options, modifie = false }) {
@@ -96,6 +134,13 @@ export default function ReglagesRecherche() {
   if (!brouillon) return (
     <div className="admin">
       <div className="sq-hauteur" style={{ minHeight: intro.hauteur }}><SqCarte lignes={4} label="Chargement des réglages de recherche" /></div>
+      {/* NOTE: même ordre que la page : ce que l'on cherche (type, métiers), puis suggestions de l'IA et listes des offres reçues */}
+      <div className="reglages-listes sqz" aria-hidden="true">
+        <Sq l="30%" h={14} />
+        <div className="bloc-rep"><div className="bloc-rep-sq"><Sq l="40%" h={18} /></div></div>
+        <div className="bloc-rep"><div className="bloc-rep-sq"><Sq l="40%" h={18} /></div></div>
+      </div>
+      <Sq l="30%" h={14} />
       <div className="sq-hauteur" style={{ minHeight: hauteurIa }}><SqCarte lignes={2} label="" /></div>
       <div className="reglages-listes sqz" aria-hidden="true">
         {CHAMPS.map(c => <div key={c.cle} className="bloc-rep"><div className="bloc-rep-sq"><Sq l="40%" h={18} /></div></div>)}
@@ -106,12 +151,14 @@ export default function ReglagesRecherche() {
   const modifie = !egal(brouillon, enregistre);
   // NOTE: mise à jour par fonction, pour que plusieurs ajouts d'affilée (suggestions de l'IA cochées dans plusieurs listes) partent tous du brouillon courant
   const change = (cle, f: (liste: string[]) => string[]) => { setBrouillon(b => ({ ...b, [cle]: f(b[cle] ?? []) })); setApercu(null); setMessage(''); setErreur(''); };
+  const changeValeur = (cle, v) => { setBrouillon(b => ({ ...b, [cle]: v })); setApercu(null); setMessage(''); setErreur(''); };
 
   const sauver = async () => {
     setErreur(''); setOccupe(true);
     try {
       const r = await enregistrerReglages(brouillon);
       setEnregistre(r.reglages); setBrouillon(r.reglages); setOrigine('app'); setApercu(null);
+      signalerReglages();
       setMessage(`Réglages enregistrés${r.retirees ? `, ${r.retirees} offre(s) retirée(s)` : ''}. Lancez une synchronisation pour appliquer les nouvelles recherches.`);
     } catch (e) { setErreur(e.message); } finally { setOccupe(false); }
   };
@@ -129,7 +176,7 @@ export default function ReglagesRecherche() {
         <h3 className="carte-titre">
           <Search size={17} aria-hidden="true" />Recherche d'offres
           <AideModale titre="Recherche d'offres">
-            <p>Ces cinq listes décident des offres qui arrivent dans l'application : où chercher, quels mots-clés, quels intitulés et contrats écarter, quels employeurs suivre de près.</p>
+            <p>Ces cinq listes décident des offres qui arrivent dans l'application : où chercher, quels mots-clés, quels intitulés et contrats écarter, quels employeurs suivre de près. Les blocs « Type de recherche et score » et « Métiers recherchés », en tête de page, ne filtrent rien : ils classent les offres et règlent leur ordre.</p>
             <ul>
               <li>Les modifications restent en brouillon jusqu'à « Enregistrer les réglages ». Avant d'enregistrer, l'application montre combien d'offres déjà en base seraient retirées.</li>
               <li>Les offres liées à une candidature et celles saisies à la main ne sont jamais retirées.</li>
@@ -139,9 +186,10 @@ export default function ReglagesRecherche() {
           </AideModale>
         </h3>
         {/* NOTE: d'abord le rôle de la page et la marche à suivre, puis l'origine des listes en une ligne */}
-        <p className="small">Les cinq listes ci-dessous décident des offres qui arrivent dans l'onglet Offres : où chercher, quels mots-clés, quels intitulés et contrats écarter, quels employeurs suivre.</p>
+        <p className="small">Commencez par dire ce que vous cherchez : le type de recherche (emploi, alternance ou stage) et vos métiers, qui classent les offres et règlent leur score. Les cinq listes suivantes décident des offres qui arrivent dans l'onglet Offres : où chercher, quels mots-clés, quels intitulés et contrats écarter, quels employeurs suivre.</p>
         <ol className="veille-etapes small">
-          <li>Modifiez les listes, à la main ou avec les suggestions de l'IA juste en dessous.</li>
+          <li>Choisissez le type de recherche et vos métiers.</li>
+          <li>Modifiez les listes, à la main ou avec les suggestions de l'IA.</li>
           <li>Enregistrez : l'application montre d'abord combien d'offres déjà reçues seraient retirées.</li>
           <li>La synchronisation suivante applique les nouvelles recherches.</li>
         </ol>
@@ -151,6 +199,13 @@ export default function ReglagesRecherche() {
             : "Origine : copie des listes de la veille n8n. Dès le premier enregistrement ici, l'application utilise ses propres listes ; la veille n8n garde les siennes pour ses alertes Discord."}
         </p>
       </div>
+      {/* ANCHOR: ordre de la page : ce que l'on cherche (type de recherche, métiers), puis les offres reçues (suggestions de l'IA et cinq listes) */}
+      <h4 className="admin-sous-titre reglages-section">Ce que vous cherchez</h4>
+      <div className="reglages-listes">
+        <ReglagesScore brouillon={brouillon} enregistre={enregistre} onChange={changeValeur} />
+        <MetiersRecherches />
+      </div>
+      <h4 className="admin-sous-titre reglages-section">Offres reçues</h4>
       <VeilleIa champs={CHAMPS} brouillon={brouillon} ajouter={(cle, valeurs) => change(cle, l => [...l, ...valeurs])} />
       <div className="reglages-listes">
         {CHAMPS.map(c => <ListeEditable key={c.cle} champ={c} valeurs={brouillon[c.cle]} options={suggestions[c.cle]} onChange={v => change(c.cle, () => v)} modifie={!egal(brouillon[c.cle], enregistre[c.cle])} />)}

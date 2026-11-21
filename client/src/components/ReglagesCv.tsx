@@ -4,12 +4,13 @@ import { usePhoto } from '../usePhoto.ts';
 import { CATEGORIES } from '../constants.ts';
 import VariantesTexte from './VariantesTexte.tsx';
 import Select from './Select.tsx';
-import { METIERS_CV as METIERS, TITRES_METIER } from '../../../lib/cv.mjs';
+import { metierDe } from '../../../lib/metiers.mjs';
+import { TITRES_METIER } from '../../../lib/cv.mjs';
+import { metiersPerso, useMetiers } from '../metiers.ts';
 
 const CHAMPS_REGLAGE: ['titres' | 'accroches' | 'resumes', string][] = [['titres', 'Titre'], ['accroches', 'Accroche'], ['resumes', 'Résumé']];
 // NOTE: largeur de l'aperçu du CV dans l'onglet CV/LM sur grand écran, en pixels
 const LARGEUR_APERCU = 908;
-const OPTIONS_CIBLE = [['general', 'CV général'], ...METIERS.map(m => [m, CATEGORIES[m].label])];
 
 // ANCHOR: aperçu du haut du CV (même rendu que l'onglet CV/LM : entête puis Profil), rogné au premier tiers d'une page A4 ; 1 titre, 2 accroche, 3 résumé, la zone réglée est entourée
 function ApercuHautCv({ champ, textes, contact, photo }: { champ: 'titres' | 'accroches' | 'resumes'; textes: Record<string, string>; contact: Record<string, string>; photo: string }) {
@@ -50,13 +51,15 @@ function ApercuHautCv({ champ, textes, contact, photo }: { champ: 'titres' | 'ac
 
 // ANCHOR: titre, accroche et résumé du CV par cible (profil.titres, accroches, resumes et leurs variantes), dans Profil > Modèles CV et lettre ; un champ à la fois, choisi par les pastilles
 export default function ReglagesCv({ profil, maj }) {
+  const { affiches: metiers } = useMetiers();
+  const OPTIONS_CIBLE = [['general', 'CV général'], ...metiers.map(m => [m, CATEGORIES[m].label])];
   const [kReglage, setKReglage] = useState('general');
   const [champReglage, setChampReglage] = useState<'titres' | 'accroches' | 'resumes'>('accroches');
   const contact = profil?.contact ?? {};
   const photo = usePhoto();
   const majProfil = (cle, k, v) => maj(s => ({ profil: { ...s.profil, [cle]: { ...(s.profil?.[cle] ?? {}), [k]: v } } }));
   const personnalise = Boolean(profil?.titres?.[kReglage] || profil?.accroches?.[kReglage] || profil?.resumes?.[kReglage]);
-  const texteChamp = { titres: profil?.titres?.[kReglage] || TITRES_METIER[kReglage] || contact.titre || '', accroches: profil?.accroches?.[kReglage] || profil?.accroche || '', resumes: profil?.resumes?.[kReglage] || profil?.resume || '' };
+  const texteChamp = { titres: profil?.titres?.[kReglage] || (TITRES_METIER[kReglage] ?? metierDe(kReglage, metiersPerso())?.titre) || contact.titre || '', accroches: profil?.accroches?.[kReglage] || profil?.accroche || '', resumes: profil?.resumes?.[kReglage] || profil?.resume || '' };
   const variantes = (profil?.variantes?.[champReglage]?.[kReglage] ?? []) as { nom: string; texte: string }[];
   const majVariantes = liste => maj(s => ({ profil: { ...s.profil, variantes: { ...(s.profil?.variantes ?? {}), [champReglage]: { ...(s.profil?.variantes?.[champReglage] ?? {}), [kReglage]: liste } } } }));
   const reinitialiser = () => ['titres', 'accroches', 'resumes'].forEach(cle => majProfil(cle, kReglage, ''));

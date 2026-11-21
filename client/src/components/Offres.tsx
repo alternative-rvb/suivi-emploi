@@ -15,8 +15,10 @@ import BoiteLiee from './BoiteLiee.tsx';
 import { CATEGORIES, POSTULER_VIA, SOURCES, STATUTS } from '../constants.ts';
 import { rapprocher, regrouperAnnonces } from '../doublons.ts';
 import { niveauScore, preparerScore } from '../score.ts';
+import { optionsScore, useOptionsScore } from '../optionsScore.ts';
 import { chargerCentresZone, distanceLieuBonusKm, distanceZoneKm } from '../geo.ts';
-import { ajouterJours, aujourdhui, ecranLarge, fmtDate, formaterSalaire, useMemoire, lienSur } from '../utils.ts';
+import { aujourdhui, ecranLarge, fmtDate, formaterSalaire, useMemoire, lienSur } from '../utils.ts';
+import { estNouvelle } from '../comptage.ts';
 import Postuler from './Postuler.tsx';
 import Spontanees from './Spontanees.tsx';
 import TrajetOffre from './TrajetOffre.tsx';
@@ -28,13 +30,11 @@ import Select from './Select.tsx';
 import Suggestions from './Suggestions.tsx';
 import { DEPARTEMENTS } from '../departements.ts';
 import { useEnLigne } from '../useEnLigne.ts';
-import { METIERS_CV } from '../../../lib/listes.mjs';
+import { useMetiers } from '../metiers.ts';
 
 const PAGE = 80;
 const TRIS = [['score', 'Les plus pertinentes'], ['date', 'Les plus récentes']];
 const estManuelle = o => o.id_offre.startsWith('man-');
-// ANCHOR: nouvelle = détectée il y a moins de 3 jours (même seuil que l'onglet Aujourd'hui), ni vue, ni écartée, ni expirée
-const estNouvelle = o => !o.vue && !o.ignoree && !o.expiree && o.date_detection >= ajouterJours(aujourdhui(), -2);
 
 // Rappel dans la liste : candidature déjà faite sur cette offre, ou chez le même employeur
 function BadgeDoublon({ rap }) {
@@ -60,11 +60,13 @@ function OffresAnnonces({ versSpontanees, candidatures, competences, experiences
 
   const [centresPrets, setCentresPrets] = useState(0);
   useEffect(() => { chargerCentresZone().then(() => setCentresPrets(1)); }, []);
+  const optionsPretes = useOptionsScore();
+  const { affiches: metiers } = useMetiers();
   // NOTE: score recalculé seulement quand les offres, les compétences ou les centres des communes changent
   const scores = useMemo(() => {
-    const calcul = preparerScore(competences, aujourdhui(), experiences, projets, distanceZoneKm, distanceLieuBonusKm);
+    const calcul = preparerScore(competences, aujourdhui(), experiences, projets, distanceZoneKm, distanceLieuBonusKm, optionsScore());
     return new Map<string, any>((offres || []).map(o => [o.id_offre, calcul(o)]));
-  }, [offres, competences, experiences, projets, centresPrets]);
+  }, [offres, competences, experiences, projets, centresPrets, optionsPretes]);
   const tri = f.tri || 'score';
 
   // ANCHOR: parOffre rapproche chaque offre d'une candidature (lien, numéro retrouvé dans la candidature, ou même employeur)
@@ -94,14 +96,14 @@ function OffresAnnonces({ versSpontanees, candidatures, competences, experiences
     });
   }, [offres, f.q, f.zone, f.ignorees, f.suivies, f.expirees, f.copies, parOffre, annonces]);
   // ANCHOR: Non vues et Vues s'appliquent après tous les autres filtres, leurs compteurs partent de la même liste (catégorie comprise)
-  // NOTE: Nouvelles = détectées aujourd'hui (même règle que le compteur de l'accueil), cumulable avec Non vues ou Vues
-  const duJour = o => (o.date_detection || '').slice(0, 10) === aujourdhui();
-  const filtrees = useMemo(() => avantVue.filter(o => (!f.nonvues || !dejaVue(o)) && (!f.vues || dejaVue(o)) && (!f.nouvelles || duJour(o)) && (!f.epinglees || o.epinglee)), [avantVue, suivie, f.nonvues, f.vues, f.nouvelles, f.epinglees]);
+  // NOTE: Nouvelles = offres qui portent le badge New (estNouvelle, offre pas encore suivie), même règle que le compteur de l'accueil ; cumulable avec Non vues ou Vues
+  const nouvelle = o => estNouvelle(o) && !suivie(o.id_offre);
+  const filtrees = useMemo(() => avantVue.filter(o => (!f.nonvues || !dejaVue(o)) && (!f.vues || dejaVue(o)) && (!f.nouvelles || nouvelle(o)) && (!f.epinglees || o.epinglee)), [avantVue, suivie, f.nonvues, f.vues, f.nouvelles, f.epinglees]);
   const dansCat = useMemo(() => avantVue.filter(o => f.cat === 'toutes' || o.categorie === f.cat), [avantVue, f.cat]);
   const nbVues = dansCat.filter(dejaVue).length;
   const nbNonVues = dansCat.length - nbVues;
   const nbFiltres = [f.zone, f.suivies, f.nonvues, f.vues, f.nouvelles, f.expirees, f.copies, f.ignorees, f.epinglees].filter(Boolean).length;
-  const nbNouvelles = dansCat.filter(duJour).length;
+  const nbNouvelles = dansCat.filter(nouvelle).length;
   const nbEpinglees = dansCat.filter(o => o.epinglee).length;
   const compte = cat => filtrees.filter(o => cat === 'toutes' || o.categorie === cat).length;
 
@@ -229,7 +231,7 @@ function OffresAnnonces({ versSpontanees, candidatures, competences, experiences
           <button type="button" className="btn btn-primary small" onClick={() => setAjout(true)} title="Saisir une offre à la main"><Plus size={15} />Offre</button>
           <button type="button" className="btn btn-ghost small" onClick={versSpontanees} title="Entreprises à contacter sans offre publiée (La Bonne Boite)"><Building2 size={15} />Spontanées</button>
         </div>
-        <FiltresPastilles label="Catégorie" valeur={f.cat} onChange={cat => changer({ cat })} items={Object.entries(CATEGORIES).map(([k, c]) => ({ cle: k, libelle: c.label, couleur: c.color, nombre: compte(k) }))} />
+        <FiltresPastilles label="Catégorie" valeur={f.cat} onChange={cat => changer({ cat })} items={['toutes', ...metiers, 'autre'].map(k => ({ cle: k, libelle: CATEGORIES[k].label, couleur: CATEGORIES[k].color, nombre: compte(k) }))} />
         <details className="filtres-repli" open={filtresOuverts} onToggle={e => setFiltresOuverts(e.currentTarget.open)}>
           <summary><SlidersHorizontal size={15} />Filtres et tri{nbFiltres > 0 && <span className="count">{nbFiltres}</span>}</summary>
         <div className="filtres">
@@ -238,7 +240,7 @@ function OffresAnnonces({ versSpontanees, candidatures, competences, experiences
         </div>
         <div className="chips chips-compact" role="group" aria-label="Affichage">
           <button type="button" className={'chip' + (f.nonvues ? ' on' : '')} aria-pressed={f.nonvues} onClick={() => changer({ nonvues: !f.nonvues, vues: false })} title="Masquer les offres déjà marquées comme vues" aria-label={`Non vues, ${nbNonVues}`}><span className="chip-libelle">Non vues</span> <span className="count" aria-hidden="true">{nbNonVues}</span></button>
-          <button type="button" className={'chip' + (f.nouvelles ? ' on' : '')} aria-pressed={Boolean(f.nouvelles)} onClick={() => changer({ nouvelles: !f.nouvelles })} title="N'afficher que les offres détectées aujourd'hui" aria-label={`Nouvelles, ${nbNouvelles}`}><span className="chip-libelle">Nouvelles</span> <span className="count" aria-hidden="true">{nbNouvelles}</span></button>
+          <button type="button" className={'chip' + (f.nouvelles ? ' on' : '')} aria-pressed={Boolean(f.nouvelles)} onClick={() => changer({ nouvelles: !f.nouvelles })} title="N'afficher que les offres marquées New : détectées depuis moins de 3 jours et pas encore vues" aria-label={`Nouvelles, ${nbNouvelles}`}><span className="chip-libelle">Nouvelles</span> <span className="count" aria-hidden="true">{nbNouvelles}</span></button>
           <button type="button" className={'chip' + (f.epinglees ? ' on' : '')} aria-pressed={Boolean(f.epinglees)} onClick={() => changer({ epinglees: !f.epinglees })} title="N'afficher que les offres épinglées (14 jours pour agir)" aria-label={`Épinglées, ${nbEpinglees}`}><span className="chip-libelle">Épinglées</span> <span className="count" aria-hidden="true">{nbEpinglees}</span></button>
           <button type="button" className={'chip' + (f.vues ? ' on' : '')} aria-pressed={Boolean(f.vues)} onClick={() => changer({ vues: !f.vues, nonvues: false })} title="N'afficher que les offres déjà marquées comme vues" aria-label={`Vues, ${nbVues}`}><span className="chip-libelle">Vues</span> <span className="count" aria-hidden="true">{nbVues}</span></button>
           <button type="button" className={'chip' + (f.suivies ? ' on' : '')} aria-pressed={f.suivies} onClick={() => changer({ suivies: !f.suivies })} title="Afficher aussi les offres pour lesquelles une candidature existe"><span className="chip-libelle">Déjà suivies</span></button>
@@ -274,7 +276,7 @@ function OffresAnnonces({ versSpontanees, candidatures, competences, experiences
                     <span className="row-badges">
                       {o.postuler_via && <span className="tag">{o.postuler_via}</span>}
                       {plateformeCompte(o, plateformes) && <span className="tag tag-compte" title={`Compte à créer sur ${plateformeCompte(o, plateformes)} pour postuler`} role="img" aria-label={`Compte à créer sur ${plateformeCompte(o, plateformes)}`}><UserPlus size={11} /></span>}
-                      {estNouvelle(o) && !suivie(o.id_offre) && <span className="tag tag-new" title={`Détectée le ${o.date_detection}, pas encore vue`}>New</span>}
+                      {nouvelle(o) && <span className="tag tag-new" title={`Détectée le ${o.date_detection}, pas encore vue`}>New</span>}
                       {o.epinglee && o.jours_epingle <= 3 && <span className="tag tag-urgent" title={`Épingle : ${o.jours_epingle} jour(s) pour agir`}>J-{o.jours_epingle}</span>}
                       {dejaVue(o) && <span className="tag tag-vue" title="Offre déjà vue"><Check size={11} />Vue</span>}
                       <BadgeDoublon rap={parOffre.get(o.id_offre)} />
@@ -325,7 +327,7 @@ function OffresAnnonces({ versSpontanees, candidatures, competences, experiences
               </div>
             </div>
 
-            <CompetencesOffre key={offre.id_offre} offreId={offre.id_offre} actif={Boolean(analyse?.actif)} metier={METIERS_CV.includes(offre.categorie) ? offre.categorie : ''} competences={competences} maj={maj} allerCompetences={allerCompetences} />
+            <CompetencesOffre key={offre.id_offre} offreId={offre.id_offre} actif={Boolean(analyse?.actif)} metier={offre.categorie !== 'autre' ? offre.categorie : ''} competences={competences} maj={maj} allerCompetences={allerCompetences} />
 
             <ParcoursOffre
               offre={offre}
@@ -449,7 +451,7 @@ function Pourquoi({ s }) {
         ))}
       </ul>
       {(s.km !== null || s.exigences !== 0) && <p className="small">{s.km !== null && <>Distance estimée : environ {s.km} km. </>}{s.exigences !== 0 && <>Exigences de l'annonce (analyse IA) : {s.exigences > 0 ? '+' : ''}{s.exigences} point(s).</>}</p>}
-      {(s.contrat !== 0 || s.bonusLieu !== 0) && <p className="small">{s.contrat !== 0 && <>Contrat ({s.contratRaison}) : offre éloignée, {s.contrat} point(s). </>}{s.bonusLieu !== 0 && <>Proche du lieu bonus : +{s.bonusLieu} point(s).</>}</p>}
+      {(s.contrat !== 0 || s.bonusLieu !== 0) && <p className="small">{s.contrat !== 0 && <>Contrat non recherché ({s.contratRaison}) : {s.contrat} point(s). </>}{s.bonusLieu !== 0 && <>Proche du lieu bonus : +{s.bonusLieu} point(s).</>}</p>}
       <p className="small">{s.trouvees.length ? <>Compétences trouvées dans l'annonce : {s.trouvees.join(' ; ')}</> : "Aucune compétence notée 3 ou plus n'apparaît dans l'annonce."}</p>
     </ModalScore>
   );

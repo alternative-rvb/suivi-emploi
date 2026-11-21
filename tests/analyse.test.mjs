@@ -27,6 +27,7 @@ function baseTest(n = 3) {
   ouvrirAnalyses(db);
   const ins = db.prepare("INSERT INTO offres (id_offre, titre, entreprise, categorie, date_detection, annonce) VALUES (?, ?, 'ClientABC', 'comptabilite', ?, ?)");
   for (let i = 1; i <= n; i++) ins.run(`o${i}`, `Comptable ${i}`, `2026-10-${10 + i}`, ANNONCE);
+  db.exec('INSERT INTO offre_suivis (id_offre) SELECT id_offre FROM offres');
   return db;
 }
 const faux = (repondre, extra = {}) => ({ id: 'faux', nom: 'Faux', modele: 'm', url: 'http://localhost:1', async preparer() {}, repondre, ...extra });
@@ -131,7 +132,7 @@ test('passage : analyse tout, puis rien à refaire, puis seulement ce qui change
 
 test('passage : les plus récentes d\'abord, limite, offres ignorées ou trop courtes écartées, orphelines purgées', async () => {
   const db = baseTest(3);
-  db.prepare("UPDATE offres SET ignoree = 1 WHERE id_offre = 'o1'").run();
+  db.prepare("UPDATE offre_suivis SET ignoree = 1 WHERE id_offre = 'o1'").run();
   db.prepare("UPDATE offres SET annonce = 'court' WHERE id_offre = 'o2'").run();
   assert.deepEqual(offresAAnalyser(db).map(x => x.id_offre), ['o3']);
   const db2 = baseTest(3);
@@ -169,19 +170,19 @@ test('passage : suivi détaillé (étape, offre lue, précédente, déclencheur)
   const vus = [];
   let n = 0;
   const f = faux(async () => {
-    vus.push({ etape: etatAnalyse.etape, rang: etatAnalyse.offre?.rang, titre: Boolean(etatAnalyse.offre?.titre), precedente: etatAnalyse.precedente?.ok ?? null, declencheur: etatAnalyse.declencheur });
+    vus.push({ etape: etatAnalyse(db).etape, rang: etatAnalyse(db).offre?.rang, titre: Boolean(etatAnalyse(db).offre?.titre), precedente: etatAnalyse(db).precedente?.ok ?? null, declencheur: etatAnalyse(db).declencheur });
     if (++n === 2) throw new ErreurSync('format', 'x');
     return REPONSE;
-  }, { async preparer() { vus.push({ etape: etatAnalyse.etape }); } });
+  }, { async preparer() { vus.push({ etape: etatAnalyse(db).etape }); } });
   await lancerAnalyse(db, 'bouton', { fournisseur: f });
   assert.deepEqual(vus[0], { etape: 'preparation' });
   assert.deepEqual(vus.slice(1).map(v => [v.etape, v.rang, v.titre, v.precedente, v.declencheur]), [
     ['lecture', 1, true, null, 'bouton'], ['lecture', 2, true, true, 'bouton'], ['lecture', 3, true, false, 'bouton'],
   ]);
-  assert.equal(etatAnalyse.enCours, false);
-  assert.equal(etatAnalyse.offre, null);
-  assert.equal(etatAnalyse.etape, '');
-  assert.ok(etatAnalyse.duree_moyenne_ms >= 0);
+  assert.equal(etatAnalyse(db).enCours, false);
+  assert.equal(etatAnalyse(db).offre, null);
+  assert.equal(etatAnalyse(db).etape, '');
+  assert.ok(etatAnalyse(db).duree_moyenne_ms >= 0);
 });
 
 test('passage : verrou (une seule exécution à la fois) et résumé', async () => {
@@ -197,6 +198,31 @@ test('passage : verrou (une seule exécution à la fois) et résumé', async () 
   assert.equal(resume.analysees, 2);
   assert.equal(resume.restantes, 0);
   assert.equal(resume.enCours, false);
+});
+
+test('passage : durée du dernier passage, durée par offre et durée habituelle du modèle', async () => {
+  const db = baseTest(3);
+  const f = faux(async () => { await new Promise(r => setTimeout(r, 15)); return REPONSE; }, { id: 'ollama', modele: 'modele-test' });
+  const d = /** @type {any} */ (await lancerAnalyse(db, 'test', { fournisseur: f }));
+  assert.equal(d.ok, true);
+  assert.ok(d.duree_ms >= 40, 'durée totale du passage');
+  assert.ok(d.moyenne_ms >= 14 && d.moyenne_ms <= d.duree_ms, 'durée moyenne par offre');
+  const env = { ANALYSE_PROVIDER: 'ollama', ANALYSE_MODELE: 'modele-test', ANALYSE_URL: 'http://localhost:11434' };
+  const h = /** @type {any} */ (resumeAnalyse(db, env)).historique;
+  assert.equal(h.nombre, 3);
+  const enBase = Number(db.prepare('SELECT AVG(duree_ms) m FROM analyses').get()?.m);
+  assert.equal(h.moyenne_ms, Math.round(enBase));
+  // un autre modèle n'hérite pas de cette durée
+  assert.equal(/** @type {any} */ (resumeAnalyse(db, { ...env, ANALYSE_MODELE: 'autre' })).historique, null);
+});
+
+test('passage : un échec garde sa durée et ne compte pas de moyenne par offre', async () => {
+  const db = baseTest(2);
+  const f = faux(async () => { await new Promise(r => setTimeout(r, 10)); throw new ErreurSync('reseau', 'Ollama injoignable'); });
+  const d = /** @type {any} */ (await lancerAnalyse(db, 'test', { fournisseur: f }));
+  assert.equal(d.ok, false);
+  assert.ok(d.duree_ms >= 9);
+  assert.equal(d.moyenne_ms, 0);
 });
 
 test('passage : analyse désactivée ou mal configurée, aucun appel et état explicite', async () => {

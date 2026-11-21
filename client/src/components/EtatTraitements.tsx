@@ -4,14 +4,21 @@ import { dateHeure as heure, dureeMs } from '../format.ts';
 const ICONES = { ok: CircleCheck, warn: CircleAlert, ko: CircleX };
 
 // ANCHOR: lecture d'un état de traitement en un niveau (ok, warn, ko, run, off), un titre et un détail. Même vocabulaire pour la synchro des offres et l'analyse IA.
+// NOTE: durée de la dernière synchro et moyenne des dernières réussies (jusqu'à 10), pour estimer le temps d'une récupération
+const dureesSynchro = d => [
+  d?.duree_ms ? `Durée : ${dureeMs(d.duree_ms)}` : '',
+  d?.moyenne_ms && d.durees?.length > 1 ? `moyenne ${dureeMs(d.moyenne_ms)} sur ${d.durees.length} synchros` : '',
+].filter(Boolean).join(', ');
+
 export function lireSynchro(synchro, enCours) {
   const d = synchro?.dernier;
-  if (enCours) return { niveau: 'run', titre: 'Récupération des offres en cours' };
+  if (enCours) return { niveau: 'run', titre: 'Récupération des offres en cours', detail: d?.moyenne_ms ? `Habituellement environ ${dureeMs(d.moyenne_ms)}.` : undefined };
   if (!d) return { niveau: 'off', titre: 'Offres : pas encore de synchro', detail: 'Aucune récupération depuis le démarrage du serveur.' };
-  if (!d.ok) return { niveau: 'ko', titre: 'Récupération des offres en échec', detail: d.erreur, quand: d.date };
+  const temps = dureesSynchro(d);
+  if (!d.ok) return { niveau: 'ko', titre: 'Récupération des offres en échec', detail: d.erreur, lignes: temps ? [temps] : undefined, quand: d.date };
   const sources = d.providers?.map(p => p.nom).join(', ');
-  if (d.echecs?.length) return { niveau: 'warn', titre: 'Récupération partielle', detail: d.echecs.map(e => `${e.nom} : ${e.erreur}`).join(' '), quand: d.date };
-  return { niveau: 'ok', titre: 'Offres récupérées', detail: [sources && `via ${sources}`, d.enBase != null && `${d.enBase} en base`, d.stats?.nouvelles ? `${d.stats.nouvelles} nouvelle(s)` : ''].filter(Boolean).join(', '), quand: d.date };
+  if (d.echecs?.length) return { niveau: 'warn', titre: 'Récupération partielle', detail: d.echecs.map(e => `${e.nom} : ${e.erreur}`).join(' '), lignes: temps ? [temps] : undefined, quand: d.date };
+  return { niveau: 'ok', titre: 'Offres récupérées', detail: [sources && `via ${sources}`, d.enBase != null && `${d.enBase} en base`, d.stats?.nouvelles ? `${d.stats.nouvelles} nouvelle(s)` : ''].filter(Boolean).join(', '), lignes: temps ? [temps] : undefined, quand: d.date };
 }
 
 // ANCHOR: récit du passage d'analyse en cours (ligne 255) : étape, offre lue et depuis quand, résultat de la précédente, temps restant estimé
@@ -24,7 +31,8 @@ function recitAnalyse(a, modele: string) {
   }
   const ecoule = Math.max(0, Date.now() - Date.parse(o.depuis));
   const p = a.precedente;
-  const moyenne = a.duree_moyenne_ms;
+  // NOTE: tant qu'aucune offre n'est terminée, la durée habituelle des dernières analyses sert d'estimation
+  const moyenne = a.duree_moyenne_ms || a.historique?.moyenne_ms;
   const reste = moyenne ? (a.total - o.rang) * moyenne + Math.max(0, moyenne - ecoule) : 0;
   return {
     niveau: 'run',
@@ -39,6 +47,17 @@ function recitAnalyse(a, modele: string) {
   };
 }
 
+// ANCHOR: durées de l'analyse hors passage en cours : dernier passage (durée et temps par offre), moyenne des 50 dernières analyses du modèle, temps estimé pour les offres en attente
+function lignesDurees(a): string[] | undefined {
+  const d = a.dernier;
+  const h = a.historique;
+  const lignes = [
+    d?.duree_ms && d.faits ? `Dernier passage : ${d.faits} offre(s) en ${dureeMs(d.duree_ms)}${d.moyenne_ms ? `, environ ${dureeMs(d.moyenne_ms)} par offre` : ''}.` : d?.duree_ms ? `Dernier passage arrêté après ${dureeMs(d.duree_ms)}.` : '',
+    h ? `Moyenne : ${dureeMs(h.moyenne_ms)} par offre sur ${h.nombre > 1 ? `les ${h.nombre} dernières analyses` : 'la dernière analyse'}${a.restantes ? `, soit environ ${dureeMs(h.moyenne_ms * a.restantes)} pour les ${a.restantes} en attente` : ''}.` : '',
+  ].filter(Boolean);
+  return lignes.length ? lignes : undefined;
+}
+
 export function lireAnalyse(a) {
   if (!a) return null;
   const modele = a.modele ? ` (${a.modele})` : '';
@@ -49,10 +68,11 @@ export function lireAnalyse(a) {
   }
   if (a.enCours) return recitAnalyse(a, modele);
   const d = a.dernier;
-  if (d && !d.ok) return { niveau: 'ko', titre: `Analyse IA en échec${modele}`, detail: `${d.erreur}${d.faits ? ` ${d.faits} offre(s) analysée(s) avant l'arrêt.` : ''}`, quand: d.date };
-  if (d?.echecs > 0) return { niveau: 'warn', titre: `Analyse IA partielle${modele}`, detail: `${d.echecs} réponse(s) illisible(s) sur ${d.total}, ${a.analysees} offre(s) analysée(s) au total`, quand: d.date };
+  const lignes = lignesDurees(a);
+  if (d && !d.ok) return { niveau: 'ko', titre: `Analyse IA en échec${modele}`, detail: `${d.erreur}${d.faits ? ` ${d.faits} offre(s) analysée(s) avant l'arrêt.` : ''}`, lignes, quand: d.date };
+  if (d?.echecs > 0) return { niveau: 'warn', titre: `Analyse IA partielle${modele}`, detail: `${d.echecs} réponse(s) illisible(s) sur ${d.total}, ${a.analysees} offre(s) analysée(s) au total`, lignes, quand: d.date };
   const titre = a.restantes ? `Analyse IA : ${a.restantes} offre(s) en attente${modele}` : `Analyse IA à jour${modele}`;
-  return { niveau: 'ok', titre, detail: `${a.analysees} offre(s) analysée(s)`, quand: d?.date };
+  return { niveau: 'ok', titre, detail: `${a.analysees} offre(s) analysée(s)`, lignes, quand: d?.date };
 }
 
 function Etat({ e, Icone }) {

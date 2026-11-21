@@ -260,7 +260,8 @@ export interface LettreMatrice {
   ton: 'sobre' | 'chaleureux' | 'dynamique'; mots: number; competences: string[];
   blocs: Record<BlocLettre, { actif: boolean; consigne: string }>;
 }
-export type MetierLettre = 'formateur_digital' | 'web_design' | 'dev_web' | 'comptabilite';
+// NOTE: clé d'un métier du catalogue (lib/metiers.mjs)
+export type MetierLettre = string;
 /** bibliothèque de style (kv lettre_style) : angles d'accroche (metiers vide = tous) et formules à éviter, sans accents */
 export interface LettreStyle { angles: { id: string; nom: string; consigne: string; metiers: MetierLettre[] }[]; eviter: string[] }
 export interface LettreBrouillon {
@@ -329,13 +330,31 @@ export interface Trajets {
   peage_km: number;
 }
 
+// NOTE: zone de recherche d'un profil (réglage « zone », v32, lib/zone.mjs) ; points au format « latitude,longitude »
+/** Profil de recherche (v31) : couleur parmi COULEURS_PROFIL de lib/profils.mjs, vide = sans pastille */
+export interface ProfilRecherche { id: string; nom: string; couleur: '' | 'bleu' | 'vert' | 'orange' | 'violet' | 'rouge' | 'gris'; cree_le: string; ordre: number; defaut: boolean }
+
+export interface ZoneRecherche {
+  departement_proche: string;
+  villes_proches: string[];
+  origines: string[];
+  departements_distance: string[];
+  lieu_bonus: string;
+}
+
 export interface Reglages {
   zones: string[];
   mots_cles: string[];
   mots_exclus: string[];
   contrats_exclus: string[];
   entreprises: string[];
+  // NOTE: réglages du score (lib/contrat.mjs), facultatifs à l'enregistrement, toujours remplis à la lecture
+  mode: ModeRecherche;
+  malus_contrat: number;
+  km_tous_contrats: number;
 }
+
+export type ModeRecherche = 'emploi' | 'alternance' | 'stage';
 
 // ANCHOR: analyses ponctuelles du modèle (ligne 86), schémas et contrôles dans lib/analyse/synthese.mjs
 export interface ProfilIa {

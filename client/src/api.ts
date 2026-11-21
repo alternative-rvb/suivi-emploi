@@ -1,12 +1,13 @@
 // Appels à l'API locale. Les erreurs portent le message renvoyé par le serveur (et son code HTTP) pour être affichées telles quelles.
-import type { CalendrierGoogle, Candidature, CibleCv, Competence, CompetencesOffre, Contact, EtatAgenda, EvenementAgenda, ControleCv, ControleLettre, CvDocument, CvReference, CvVersion, Echange, LettreBrouillon, LettreMatrice, LettreStyle, LettreVersion, Experience, Formation, Offre, Projet, ProfilCv, RendezVous, RendezVousSaisie, Reglages, Syntheses, Tache, Trajets } from '../../types';
+import type { CalendrierGoogle, Candidature, CibleCv, Competence, CompetencesOffre, Contact, EtatAgenda, EvenementAgenda, ControleCv, ControleLettre, CvDocument, CvReference, CvVersion, Echange, LettreBrouillon, LettreMatrice, LettreStyle, LettreVersion, Experience, Formation, Offre, Projet, ProfilCv, RendezVous, RendezVousSaisie, Reglages, Syntheses, Tache, Trajets, ZoneRecherche, ProfilRecherche } from '../../types';
+import { ouvrirProfil, profilOuvert, urlApi } from './profil.ts';
 
 export type ErreurApi = Error & { status?: number; code?: string };
 
 async function appel<T = any>(url: string, options?: RequestInit): Promise<T> {
   let r: Response;
   try {
-    r = await fetch(url, options);
+    r = await fetch(urlApi(url), options);
   } catch (e: any) {
     if (e?.name === 'TimeoutError') { const d: ErreurApi = new Error('Le serveur met trop de temps à répondre.'); d.code = 'delai'; throw d; }
     throw new Error('Serveur injoignable : est-il lancé (npm start) ?');
@@ -17,6 +18,8 @@ async function appel<T = any>(url: string, options?: RequestInit): Promise<T> {
     const e: ErreurApi = new Error(data?.erreur || 'Erreur HTTP ' + r.status);
     e.status = r.status;
     e.code = data?.code;
+    // NOTE: profil supprimé depuis un autre onglet : retour au profil par défaut
+    if (r.status === 404 && e.code === 'profil' && profilOuvert()) ouvrirProfil('');
     throw e;
   }
   return data;
@@ -53,12 +56,12 @@ export const composerCv = (d: { cible: CibleCv; categorie?: string; offre_id?: s
 export const assemblerCv = (offre_id: string, force = false) =>
   appel<{ metier: string; competences: string[]; competences_noms: string[]; motif: string; modele: string; duree_ms: number }>('/api/cv/assembler', { ...envoi('POST', { offre_id, ...(force ? { force } : {}) }), signal: AbortSignal.timeout(130_000) });
 export const supprimerVersionCv = (id: string) => appel('/api/cv/versions/' + encodeURIComponent(id), { method: 'DELETE' });
-export const lienPdfVersion = (id: string) => `/api/cv/versions/${encodeURIComponent(id)}/pdf`;
+export const lienPdfVersion = (id: string) => urlApi(`/api/cv/versions/${encodeURIComponent(id)}/pdf`);
 
 async function binaire(url: string, options?: RequestInit) {
   let r: Response;
   try {
-    r = await fetch(url, options);
+    r = await fetch(urlApi(url), options);
   } catch {
     throw new Error('Serveur injoignable : est-il lancé (npm start) ?');
   }
@@ -93,7 +96,7 @@ export const controlerLettre = (texte: string, cle: string, matrice: LettreMatri
 export const enregistrerStyle = (st: LettreStyle) => appel<LettreStyle>('/api/lettre/style', envoi('PUT', st));
 export const enregistrerMatrice = (m: LettreMatrice) => appel<LettreMatrice>('/api/lettre/matrice', envoi('PUT', m));
 export const supprimerVersionLettre = (id: string) => appel('/api/lettre/versions/' + encodeURIComponent(id), { method: 'DELETE' });
-export const lienVersionLettre = (id: string, format: 'pdf' | 'docx') => `/api/lettre/versions/${encodeURIComponent(id)}/${format}`;
+export const lienVersionLettre = (id: string, format: 'pdf' | 'docx') => urlApi(`/api/lettre/versions/${encodeURIComponent(id)}/${format}`);
 export const envoyerSignature = (fichier: File) => appel('/api/signature', { method: 'POST', headers: { 'Content-Type': fichier.type || 'application/octet-stream' }, body: fichier });
 export const supprimerSignature = () => appel('/api/signature', { method: 'DELETE' });
 export const envoyerPhoto = (fichier: File) => appel('/api/photo', { method: 'POST', headers: { 'Content-Type': fichier.type || 'application/octet-stream' }, body: fichier });
@@ -125,7 +128,7 @@ export const lancerSynthese = (cle: 'profil' | 'veille') => appel<Syntheses>('/a
 
 // ANCHOR: Google Agenda (ligne 120). La connexion est une navigation (page de consentement de Google), le serveur renvoie ensuite vers cette origine
 export const etatAgenda = () => appel<EtatAgenda>('/api/agenda');
-export const lienConnexionAgenda = () => '/api/agenda/connexion?retour=' + encodeURIComponent(location.origin);
+export const lienConnexionAgenda = () => urlApi('/api/agenda/connexion?retour=' + encodeURIComponent(location.origin));
 export const deconnecterAgenda = () => appel<EtatAgenda & { revoque: boolean }>('/api/agenda/deconnexion', { method: 'POST' });
 export const calendriersAgenda = () => appel<CalendrierGoogle[]>('/api/agenda/calendriers');
 export const choisirCalendrier = (calendrier_id: string) => appel<EtatAgenda>('/api/agenda', envoi('PUT', { calendrier_id }));
@@ -144,13 +147,23 @@ export const apercuReglages = (reglages: Reglages) => appel('/api/reglages?aperc
 export const chargerPlateformes = () => appel<{ plateformes: string[] }>('/api/plateformes');
 export const enregistrerPlateformes = (plateformes: string[]) => appel<{ plateformes: string[] }>('/api/plateformes', envoi('PUT', plateformes));
 export const chargerTrajets = () => appel<{ trajets: Trajets }>('/api/trajets');
+// NOTE: zone de recherche du profil : reglage = valeurs saisies, le reste (origines, departements, bonus) sert au calcul des distances (geo.ts)
+export const chargerZone = () => appel<{ reglage: ZoneRecherche }>('/api/zone');
+export const enregistrerZone = (zone: ZoneRecherche) => appel<{ reglage: ZoneRecherche, proches_modifiees: number }>('/api/zone', envoi('PUT', zone));
+// NOTE: métiers recherchés par le profil (ligne 260) : liste ordonnée de clés du catalogue de lib/metiers.mjs
+export type MetierPerso = { cle: string; libelle: string; titre: string; mots: string[]; exclus: string[]; rome: string; couleur: string };
+export type ReponseMetiers = { metiers: string[]; perso: MetierPerso[]; catalogue: { cle: string; libelle: string; titre: string; couleur: string; rome: string }[]; max: number; perso_max: number; couleurs: string[] };
+export const chargerMetiers = () => appel<ReponseMetiers>('/api/metiers');
+export const apercuMetier = (def: Partial<MetierPerso>) => appel<{ total: number; sur: number; exemples: string[] }>('/api/metiers/apercu', envoi('POST', def));
+// NOTE: perso absent = métiers créés inchangés ; la clé d'un nouveau métier est tirée par l'interface (nouvelleCleMetier) pour pouvoir le placer dans la liste
+export const enregistrerMetiers = (metiers: string[], perso?: MetierPerso[]) => appel<ReponseMetiers>('/api/metiers', envoi('PUT', perso ? { metiers, perso } : { metiers }));
 export const enregistrerTrajets = (trajets: Trajets) => appel('/api/trajets', envoi('PUT', trajets));
 export const enregistrerReglages = (reglages: Reglages) => appel('/api/reglages', envoi('PUT', reglages));
 
 // Rapport d'activité (compteurs par jour) et événements bruts du journal
 const requeteRapport = (du?: string, au?: string, grain = 'jour') => `grain=${grain}${du ? '&du=' + du : ''}${au ? '&au=' + au : ''}`;
 export const chargerRapport = (du?: string, au?: string, grain = 'jour') => appel(`/api/rapport?${requeteRapport(du, au, grain)}`);
-export const lienRapportCsv = (du?: string, au?: string, grain = 'jour') => `/api/rapport?${requeteRapport(du, au, grain)}&format=csv`;
+export const lienRapportCsv = (du?: string, au?: string, grain = 'jour') => urlApi(`/api/rapport?${requeteRapport(du, au, grain)}&format=csv`);
 export const verifierOffre = (id: string): Promise<{ statut: 'en_ligne' | 'cloturee' | 'inconnu'; protegee: boolean; marquee: boolean }> => appel(`/api/offres/${encodeURIComponent(id)}/verifier`, { method: 'POST' });
 export const vueCandidature = (id: string) => appel(`/api/candidatures/${encodeURIComponent(id)}/vue`, { method: 'POST' });
 export const chargerJournal = (du: string, limite = 300, au = '', entite = '') => appel(`/api/journal?du=${du}${au ? `&au=${au}` : ''}${entite ? `&entite=${entite}` : ''}&limite=${limite}`);
@@ -172,5 +185,11 @@ export const majSuiviEntreprise = (siret: string, d: { statut: StatutEntreprise 
 
 export type PointMarche = { periode: string; offres: number | null; demandeurs: number | null; offres_pour_100: number | null };
 export type MetierMarche = { evolution_pct?: number | null; historique?: PointMarche[]; cle: string; rome: string; libelle: string; periode: string; offres: number | null; offres_12_mois: number | null; demandeurs: number | null; offres_pour_100: number | null };
-export type Marche = { actif: boolean; jour?: string; departement?: string; territoire?: string; metiers: MetierMarche[]; obsolete?: boolean; erreur?: string };
+export type Marche = { actif: boolean; jour?: string; departement?: string; territoire?: string; metiers: MetierMarche[]; obsolete?: boolean; erreur?: string; sans_metiers?: boolean; sans_rome?: string[] };
 export const chargerMarche = (force = false) => appel<Marche>('/api/marche' + (force ? '?force=1' : ''));
+
+// ANCHOR: profils (ligne 263) : liste et gestion ; « actif » de la réponse = profil ouvert (préfixe ajouté par appel)
+export const chargerProfils = () => appel<{ profils: ProfilRecherche[]; actif: string }>('/api/profils');
+export const creerProfil = (d: { nom: string; couleur?: string }) => appel<ProfilRecherche>('/api/profils', envoi('POST', d));
+export const modifierProfil = (id: string, d: { nom?: string; couleur?: string }) => appel<ProfilRecherche>('/api/profils/' + encodeURIComponent(id), envoi('PATCH', d));
+export const supprimerProfil = (id: string) => appel<{ ok: boolean }>('/api/profils/' + encodeURIComponent(id), { method: 'DELETE' });

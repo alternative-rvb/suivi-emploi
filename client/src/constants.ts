@@ -1,3 +1,5 @@
+import { CATALOGUE } from '../../lib/metiers.mjs';
+
 export const STATUTS = {
   a_faire: { label: 'À faire', color: 'var(--c-blue)' },
   en_cours: { label: 'En cours', color: 'var(--c-amber)' },
@@ -33,12 +35,10 @@ export const RAISONS = [
   'Autre',
 ];
 
-export const CATEGORIES = {
+// NOTE: libellé et couleur de chaque métier du catalogue (lib/metiers.mjs) ; les écrans ne montrent que ceux du profil (client/src/metiers.ts)
+export const CATEGORIES: Record<string, { label: string; color: string }> = {
   toutes: { label: 'Toutes', color: 'var(--c-grey)' },
-  formateur_digital: { label: 'Formateur digital', color: 'var(--c-violet)' },
-  web_design: { label: 'Web design', color: 'var(--c-pink)' },
-  dev_web: { label: 'Développement web', color: 'var(--c-blue)' },
-  comptabilite: { label: 'Comptabilité', color: 'var(--c-emerald)' },
+  ...Object.fromEntries(CATALOGUE.map(m => [m.cle, { label: m.libelle, color: `var(--c-${m.couleur})` }])),
   autre: { label: 'Autre', color: 'var(--c-grey)' },
 };
 

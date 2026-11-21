@@ -11,12 +11,13 @@ import { assemblerCv, NIVEAU_MIN as NIVEAU_MIN_ASSEMBLAGE } from './lib/analyse/
 import { dernierEchec, extractionEnCours, lancerExtraction, lireCompetencesOffre, purgerCompetencesOrphelines, rapprocher, rattacherCandidature } from './lib/analyse/competences.mjs';
 import { CLES_SYNTHESE, lancerSynthese, ouvrirSyntheses, resumeSyntheses } from './lib/analyse/synthese.mjs';
 import { differences, evenements, jourLocal, journaliser, rapport, rapportCsv } from './lib/journal.mjs';
-import { appliquerVerification, CATEGORIES_OFFRE, classer, estProche, EXCLUS_TOUJOURS, expirerEpingles, JOURS_EPINGLE, JOURS_MAX, offresRetirables, ouvrirBase, retirerOffres, TYPES_EXPERIENCE, TYPES_FORMATION } from './lib/offres.mjs';
+import { appliquerVerification, CATEGORIES_OFFRE, classer, estProche, EXCLUS_TOUJOURS, expirerEpingles, JOURS_EPINGLE, JOURS_MAX, offresRetirables, ouvrirBase, recalculerProches, retirerOffres, supprimerOrphelines, TABLES_PROFIL, TYPES_EXPERIENCE, TYPES_FORMATION } from './lib/offres.mjs';
+import { avecProfil, creerProfil, dossierProfil, ecrireReglageProfil, ErreurProfil, ID_PROFIL, lireReglageProfil, listerProfils, modifierProfil, profilActif, profilDefaut, supprimerProfil } from './lib/profils.mjs';
 import { ErreurLieux, lireLieux, validerLieux } from './lib/lieux.mjs';
 import { COULEURS_CONTACT, INTERETS_CANDIDATURE, STATUTS_CANDIDATURE, TYPES_PROJET, USAGES_IA } from './lib/listes.mjs';
 import { EMAIL, norm, TELEPHONE } from './lib/texte.mjs';
 import { ErreurLinkedin, lireExportLinkedin, proposerImport } from './lib/linkedin.mjs';
-import { CHAMPS_CONTACT, composerCv, controlerCv, ErreurCv, LIBELLES_METIER, METIERS_CV, nomCv, normaliserPoids, normaliserPoidsCompetence, POIDS_MAX, prioritairesOffre, texteProfil, validerDocument } from './lib/cv.mjs';
+import { CHAMPS_CONTACT, composerCv, controlerCv, ErreurCv, METIERS_CV, nomCv, normaliserPoids, normaliserPoidsCompetence, POIDS_MAX, prioritairesOffre, texteProfil, validerDocument } from './lib/cv.mjs';
 import { cvPdf } from './lib/cv-pdf.mjs';
 import { composerCvPages } from './lib/cv-pages.mjs';
 import { compterMots, controlerLettre, ErreurLettre, nomLettre, ORIGINES_LETTRE, validerLettre, validerMatrice, validerStyle } from './lib/lettre.mjs';
@@ -29,15 +30,17 @@ import { anneesParCategorie } from './lib/parcours.mjs';
 import { DATE_FORMATION, erreurPeriode } from './lib/periode.mjs';
 import { ecrirePlateformes, ErreurPlateformes, lirePlateformes, validerPlateformes } from './lib/plateformes.mjs';
 import { ecrireTrajets, ErreurTrajets, lireTrajets, validerTrajets } from './lib/trajets.mjs';
-import { ecrireReglages, ErreurReglages, lireReglages, validerReglages } from './lib/reglages.mjs';
+import { completerReglages, ecrireReglages, ErreurReglages, lireReglages, validerReglages } from './lib/reglages.mjs';
 import { exporterBase } from './lib/export-base.mjs';
 import { lancerSauvegarde } from './lib/sauvegarde.mjs';
 import { ecrireStatutEntreprise, ErreurEntreprises, lireSuiviEntreprises } from './lib/entreprises-suivi.mjs';
 import { chercherEntreprises, DISTANCE_DEFAUT, scopeBonneBoite } from './lib/bonneboite.mjs';
-import { chargerMarche } from './lib/marche.mjs';
+import { chargerMarche, departementMarche } from './lib/marche.mjs';
 import { verifierEnLigne } from './lib/providers/france-travail.mjs';
 import { chargerEnv, ErreurSync, etatSync, lancerSync, lancerSyncDemarrage, sauvegardeDuJour } from './lib/sync.mjs';
-import { lireZone } from './lib/zone.mjs';
+import { calculerZone, lireZoneProfil, reprendreZoneEnv, validerZone } from './lib/zone.mjs';
+import { ecrireMetiers, lireMetiers, lireMetiersPerso, metiersDuProfil, vueProfil } from './lib/metiers-profil.mjs';
+import { CATALOGUE, clesMetierDe, correspondPerso, COULEURS_METIER, validerMetierPerso, estCleMetier, libelleMetier, METIERS_MAX, PERSO_MAX } from './lib/metiers.mjs';
 import { corpsEvenement, creerAgenda, heureParis } from './lib/agenda/google.mjs';
 
 const ici = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +51,8 @@ const publicDir = join(ici, 'dist');
 chargerEnv(ici);
 sauvegardeDuJour(ici);
 const db = ouvrirBase(join(ici, 'suivi.db'));
+// ANCHOR: ancienne zone du .env recopiée une fois dans le profil par défaut (réglage « zone », modifiable ensuite dans Profil > Trajets et revenu)
+if (reprendreZoneEnv(db)) console.log('Zone de recherche du .env reprise dans le profil par défaut.');
 // ANCHOR: copie quotidienne vers SUIVI_EXPORT_DIR si le dossier existe le résultat est seulement affiché dans la console
 {
   const r = exporterBase(db, process.env.SUIVI_EXPORT_DIR);
@@ -62,7 +67,17 @@ lancerSauvegarde(process.env.SUIVI_SAUVEGARDE_SCRIPT, ici).then(r => {
 ouvrirAnalyses(db);
 ouvrirSyntheses(db);
 // NOTE: jeton Google hors de suivi.db, pour qu'il ne soit pas recopié dans chaque sauvegarde du jour
-const agenda = creerAgenda({ fichier: join(ici, 'data', 'google-agenda.json') });
+// ANCHOR: un accès Google Agenda par profil (jeton dans le dossier du profil), créé à la première utilisation
+/** @type {Map<string, ReturnType<typeof creerAgenda>>} */
+const agendas = new Map();
+const agendaDe = () => {
+  const fichier = join(dossierDonnees(), 'google-agenda.json');
+  if (!agendas.has(fichier)) agendas.set(fichier, creerAgenda({ fichier }));
+  return /** @type {ReturnType<typeof creerAgenda>} */ (agendas.get(fichier));
+};
+// NOTE: profil de chaque demande de connexion en cours (state OAuth) : le retour de Google arrive sans préfixe de profil
+/** @type {Map<string, string>} */
+const profilsOAuth = new Map();
 
 // --- Validation commune ---
 class ErreurHttp extends Error {
@@ -115,22 +130,22 @@ function valider(d, champs, complet) {
       continue;
     }
     if (spec.type === 'intitules') {
-      if (typeof v !== 'object' || v === null || Array.isArray(v) || Object.entries(v).some(([m, t]) => !METIERS_CV.includes(m) || typeof t !== 'string' || t.length > 120)) {
-        throw new ErreurHttp(400, `Le champ ${k} doit associer un métier (${METIERS_CV.join(', ')}) à un intitulé de 120 caractères au plus.`);
+      if (typeof v !== 'object' || v === null || Array.isArray(v) || Object.entries(v).some(([m, t]) => !estCleMetier(m) || typeof t !== 'string' || t.length > 120)) {
+        throw new ErreurHttp(400, `Le champ ${k} doit associer un métier (${METIERS_CV.join(', ')} ou métier créé) à un intitulé de 120 caractères au plus.`);
       }
       continue;
     }
     if (spec.type === 'poids') {
       const entrees = typeof v === 'object' && v !== null && !Array.isArray(v) ? Object.entries(v) : null;
       if (!entrees || entrees.length > 200 || entrees.some(([puce, pm]) => !puce.trim() || puce.length > 1000 || typeof pm !== 'object' || pm === null || Array.isArray(pm)
-        || Object.entries(pm).some(([m, n]) => !METIERS_CV.includes(m) || !Number.isInteger(n) || n < 0 || n > POIDS_MAX))) {
-        throw new ErreurHttp(400, `Le champ ${k} doit associer chaque puce (200 au plus) à des poids entiers de 0 à ${POIDS_MAX} par métier (${METIERS_CV.join(', ')}).`);
+        || Object.entries(pm).some(([m, n]) => !estCleMetier(m) || !Number.isInteger(n) || n < 0 || n > POIDS_MAX))) {
+        throw new ErreurHttp(400, `Le champ ${k} doit associer chaque puce (200 au plus) à des poids entiers de 0 à ${POIDS_MAX} par métier (${METIERS_CV.join(', ')} ou métier créé).`);
       }
       continue;
     }
     if (spec.type === 'poidsCompetence') {
-      if (typeof v !== 'object' || v === null || Array.isArray(v) || Object.entries(v).some(([m, n]) => !METIERS_CV.includes(m) || !Number.isInteger(n) || n < 0 || n > POIDS_MAX)) {
-        throw new ErreurHttp(400, `Le champ ${k} doit associer un métier (${METIERS_CV.join(', ')}) à un poids entier de 0 à ${POIDS_MAX}.`);
+      if (typeof v !== 'object' || v === null || Array.isArray(v) || Object.entries(v).some(([m, n]) => !estCleMetier(m) || !Number.isInteger(n) || n < 0 || n > POIDS_MAX)) {
+        throw new ErreurHttp(400, `Le champ ${k} doit associer un métier (${METIERS_CV.join(', ')} ou métier créé) à un poids entier de 0 à ${POIDS_MAX}.`);
       }
       continue;
     }
@@ -148,7 +163,9 @@ function valider(d, champs, complet) {
     if (spec.type === 'heure' && !HEURE.test(v ?? '')) throw new ErreurHttp(400, `Le champ ${k} doit être une heure HH:MM ou vide.`);
     if (spec.type === 'email' && v && !EMAIL.test(v.trim())) throw new ErreurHttp(400, `Le champ ${k} doit être une adresse email.`);
     if (spec.type === 'telephone' && v && !TELEPHONE.test(v.trim())) throw new ErreurHttp(400, `Le champ ${k} ne doit contenir que des chiffres, espaces, points, tirets et un + initial.`);
-    if (spec.valeurs && !spec.valeurs.includes(v ?? '')) throw new ErreurHttp(400, `${k} invalide, valeurs : ${spec.valeurs.filter(Boolean).join(', ')}${spec.valeurs.includes('') ? ' ou vide' : ''}.`);
+    // NOTE: valeurs fixes, ou fonction pour une liste qui dépend du profil (métiers créés)
+    const valeurs = typeof spec.valeurs === 'function' ? spec.valeurs() : spec.valeurs;
+    if (valeurs && !valeurs.includes(v ?? '')) throw new ErreurHttp(400, `${k} invalide, valeurs : ${valeurs.filter(Boolean).join(', ')}${valeurs.includes('') ? ' ou vide' : ''}.`);
   }
 }
 
@@ -198,22 +215,25 @@ const versBase = d => ({
   mode_envoi: d.mode_envoi ?? '', cv: d.cv ?? '', lettre: d.lettre ? 1 : 0, lieux: JSON.stringify(validerLieux(d.lieux ?? [])), lien: (d.lien ?? '').trim(), enseignements: d.enseignements ?? '',
 });
 
+// NOTE: une offre n'existe pour un profil que s'il la suit (offre_suivis, v32)
+const offreVisible = id => Boolean(db.prepare('SELECT 1 FROM offre_suivis WHERE profil_id = profil_actif() AND id_offre = ?').get(id));
+
 // ANCHOR: une offre liée doit exister et n'être suivie que par une seule candidature.
 // NOTE: 400 et non 409, l'interface réserve le 409 à la création concurrente d'un même identifiant
 function verifierOffre(d, id) {
   if (!d.offre_id) return;
-  if (!db.prepare('SELECT 1 FROM offres WHERE id_offre = ?').get(d.offre_id)) throw new ErreurHttp(400, `Offre ${d.offre_id} introuvable.`);
-  const autre = db.prepare('SELECT id, entreprise FROM candidatures WHERE offre_id = ? AND id != ?').get(d.offre_id, String(id ?? ''));
+  if (!offreVisible(d.offre_id)) throw new ErreurHttp(400, `Offre ${d.offre_id} introuvable.`);
+  const autre = db.prepare('SELECT id, entreprise FROM candidatures WHERE profil_id = profil_actif() AND offre_id = ? AND id != ?').get(d.offre_id, String(id ?? ''));
   if (autre) throw new ErreurHttp(400, `L'offre ${d.offre_id} est déjà liée à la candidature ${autre.entreprise} (${autre.id}).`);
 }
 
 const lireCandidature = id => {
-  const r = db.prepare('SELECT * FROM candidatures WHERE id = ?').get(id);
+  const r = db.prepare('SELECT * FROM candidatures WHERE profil_id = profil_actif() AND id = ?').get(id);
   return r ? versFront(r) : null;
 };
 
 function listerCandidatures(q) {
-  const where = [];
+  const where = ['profil_id = profil_actif()'];
   const params = [];
   if (q.get('statut')) { where.push('statut = ?'); params.push(q.get('statut')); }
   if (q.get('interet')) { where.push('interet = ?'); params.push(q.get('interet')); }
@@ -222,7 +242,7 @@ function listerCandidatures(q) {
     where.push("(entreprise || ' ' || poste || ' ' || description || ' ' || notes || ' ' || raison_echec) LIKE ? ESCAPE '\\'");
     params.push('%' + q.get('q').replace(/[\\%_]/g, c => '\\' + c) + '%');
   }
-  const sql = 'SELECT * FROM candidatures' + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY date DESC, id';
+  const sql = 'SELECT * FROM candidatures WHERE ' + where.join(' AND ') + ' ORDER BY date DESC, id';
   return db.prepare(sql).all(...params).map(versFront);
 }
 
@@ -230,7 +250,7 @@ function listerCandidatures(q) {
 const libelleCandidature = c => [c.entreprise, c.poste].filter(Boolean).join(' · ');
 // NOTE: un CV sur mesure déjà composé pour l'offre (sans candidature) est lié à la candidature créée ; ceux déjà liés à une autre ne bougent pas
 function rattacherCvs(idOffre, idCandidature, nomCv = '') {
-  const libres = db.prepare('SELECT id, nom FROM cv_versions WHERE offre_id = ? AND candidature_id IS NULL ORDER BY cree_le DESC').all(idOffre);
+  const libres = db.prepare('SELECT id, nom FROM cv_versions WHERE profil_id = profil_actif() AND offre_id = ? AND candidature_id IS NULL ORDER BY cree_le DESC').all(idOffre);
   // NOTE: un seul CV est lié : celui dont le nom est saisi dans la candidature, sinon le plus récent (les essais précédents restent libres)
   const v = libres.find(x => nomCv && x.nom === nomCv) ?? libres[0];
   if (!v) return;
@@ -240,7 +260,7 @@ function rattacherCvs(idOffre, idCandidature, nomCv = '') {
   });
 }
 function insererCandidature(n) {
-  db.prepare(`INSERT INTO candidatures (id, ${COLS.join(', ')}, maj_locale) VALUES (?, ${COLS.map(() => '?').join(', ')}, 1)`).run(n.id, ...COLS.map(c => n[c]));
+  db.prepare(`INSERT INTO candidatures (id, profil_id, ${COLS.join(', ')}, maj_locale) VALUES (?, profil_actif(), ${COLS.map(() => '?').join(', ')}, 1)`).run(n.id, ...COLS.map(c => n[c]));
   // NOTE: le statut initial accompagne la création, pour distinguer une candidature envoyée d'emblée d'une candidature à faire
   journaliser(db, { entite: 'candidature', id: n.id, libelle: libelleCandidature(n), action: 'creation', changements: [{ champ: 'statut', avant: '', apres: n.statut ?? '' }] });
   // NOTE: les compétences déjà relevées dans l'annonce suivent la candidature, l'offre étant purgée au bout de 31 jours
@@ -255,12 +275,12 @@ function remplacerCandidature(n, avant) {
 
 // ANCHOR: compétences relevées dans une annonce, rapprochées du Profil du moment (jamais stockées avec leur statut)
 function ignoreesCompetences() {
-  const r = db.prepare("SELECT valeur FROM kv WHERE cle = 'competences_ignorees'").get();
-  try { return r ? JSON.parse(String(r.valeur)) : []; } catch { return []; }
+  const v = lireReglageProfil(db, 'competences_ignorees');
+  return Array.isArray(v) ? v : [];
 }
 // NOTE: une candidature liée à l'offre est l'action attendue : l'épingle n'a plus d'objet (l'offre est alors protégée par la candidature)
 function desepingler(idOffre) {
-  db.prepare("UPDATE offres SET epinglee_le = '' WHERE id_offre = ? AND epinglee_le != ''").run(idOffre);
+  db.prepare("UPDATE offre_suivis SET epinglee_le = '' WHERE profil_id = profil_actif() AND id_offre = ? AND epinglee_le != ''").run(idOffre);
 }
 
 function etatCompetencesOffre(idOffre) {
@@ -286,7 +306,7 @@ function creerCandidature(d) {
 }
 
 function modifierCandidature(id, d) {
-  const avant = db.prepare('SELECT * FROM candidatures WHERE id = ?').get(id);
+  const avant = db.prepare('SELECT * FROM candidatures WHERE profil_id = profil_actif() AND id = ?').get(id);
   if (!avant) throw new ErreurHttp(404, `Candidature ${id} introuvable.`);
   valider(d, CHAMPS_CANDIDATURE, false);
   if ('id' in d && String(d.id) !== id) throw new ErreurHttp(400, "L'identifiant ne peut pas être modifié.");
@@ -299,8 +319,9 @@ function modifierCandidature(id, d) {
 
 // NOTE: les tâches et échanges d'une candidature disparaissent avec elle
 const supprimerCandidature = id => transaction(() => {
-  const avant = db.prepare('SELECT * FROM candidatures WHERE id = ?').get(id);
-  if (avant) journaliser(db, { entite: 'candidature', id, libelle: libelleCandidature(avant), action: 'suppression' });
+  const avant = db.prepare('SELECT * FROM candidatures WHERE profil_id = profil_actif() AND id = ?').get(id);
+  if (!avant) return 0;
+  journaliser(db, { entite: 'candidature', id, libelle: libelleCandidature(avant), action: 'suppression' });
   db.prepare('DELETE FROM taches WHERE candidature_id = ?').run(id);
   db.prepare('DELETE FROM echanges WHERE candidature_id = ?').run(id);
   return db.prepare('DELETE FROM candidatures WHERE id = ?').run(id).changes;
@@ -308,7 +329,7 @@ const supprimerCandidature = id => transaction(() => {
 
 // --- Tâches (liées à une candidature ou globales) et échanges (toujours liés) : même mécanique CRUD ---
 const verifierCandidature = cid => {
-  if (cid && !db.prepare('SELECT 1 FROM candidatures WHERE id = ?').get(cid)) throw new ErreurHttp(400, `Candidature ${cid} introuvable.`);
+  if (cid && !db.prepare('SELECT 1 FROM candidatures WHERE profil_id = profil_actif() AND id = ?').get(cid)) throw new ErreurHttp(400, `Candidature ${cid} introuvable.`);
 };
 
 // ANCHOR: liens (optionnel) : un ou plusieurs champs tableau d'ids rangés dans des tables de liaison { champ, table, cle, cible, verifier }, lus et écrits avec la ligne, journalisés comme un champ
@@ -322,6 +343,9 @@ function collection({ table, nom, entite, libelle, prefixe, champs, defauts, ver
   const champsLiens = tousLiens.map(l => l.champ);
   const cols = Object.keys(champs).filter(k => !champsLiens.includes(k));
   const cleCible = l => l.cibleCle ?? 'id';
+  // ANCHOR: lignes du profil actif seulement : profil_id sur les tables racines, la candidature parente pour les échanges
+  const aProfil = TABLES_PROFIL.includes(table);
+  const propre = aProfil ? 'profil_id = profil_actif()' : 'candidature_id IN (SELECT id FROM candidatures WHERE profil_id = profil_actif())';
   // NOTE: jointure sur la table cible, un lien orphelin (base modifiée hors de l'app) n'est jamais renvoyé à l'interface
   /** @type {(l: Liens, id: string) => string[]} */
   const lireLiens = (l, id) => db.prepare(`SELECT x.${l.cible} AS c FROM ${l.table} x JOIN ${l.cibleTable} t ON t.${cleCible(l)} = x.${l.cible} WHERE x.${l.cle} = ? ORDER BY x.rowid`).all(id).map(x => String(x.c));
@@ -334,13 +358,13 @@ function collection({ table, nom, entite, libelle, prefixe, champs, defauts, ver
     for (const c of uniques) ins.run(id, c);
   };
   const lire = id => {
-    const r = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
+    const r = db.prepare(`SELECT * FROM ${table} WHERE ${propre} AND id = ?`).get(id);
     return r ? avecLiens(r) : null;
   };
   return {
     lire,
     tout() {
-      const lignes = db.prepare(`SELECT * FROM ${table} ORDER BY ${ordre}`).all();
+      const lignes = db.prepare(`SELECT * FROM ${table} WHERE ${propre} ORDER BY ${ordre}`).all();
       if (!tousLiens.length) return lignes.map(front);
       // NOTE: tous les liens en une requête par table plutôt qu'une par ligne
       /** @type {[string, Map<string, string[]>][]} */
@@ -356,7 +380,7 @@ function collection({ table, nom, entite, libelle, prefixe, champs, defauts, ver
       return lignes.map(r => ({ ...front(r), ...Object.fromEntries(parChamp.map(([champ, parId]) => [champ, parId.get(String(r.id)) ?? []])) }));
     },
     lister(q) {
-      const where = [];
+      const where = [propre];
       const params = [];
       // NOTE: filtre réservé aux collections rattachées à une candidature (tâches, échanges), ignoré ailleurs
       if ('candidature_id' in champs && q.has('candidature_id')) {
@@ -370,7 +394,7 @@ function collection({ table, nom, entite, libelle, prefixe, champs, defauts, ver
         if (/^\d{4}-\d{2}-\d{2}$/.test(q.get('du') ?? '')) { where.push('substr(debut, 1, 10) >= ?'); params.push(q.get('du')); }
         if (/^\d{4}-\d{2}-\d{2}$/.test(q.get('au') ?? '')) { where.push('substr(debut, 1, 10) <= ?'); params.push(q.get('au')); }
       }
-      let lignes = db.prepare(`SELECT * FROM ${table}${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY ${ordre}`).all(...params).map(avecLiens);
+      let lignes = db.prepare(`SELECT * FROM ${table} WHERE ${where.join(' AND ')} ORDER BY ${ordre}`).all(...params).map(avecLiens);
       // NOTE: collections à liens (contacts) : ?offre_id= ou ?candidature_id= garde les lignes reliées à cette valeur
       for (const l of tousLiens) {
         const v = q.get(l.cible);
@@ -381,10 +405,11 @@ function collection({ table, nom, entite, libelle, prefixe, champs, defauts, ver
     creer(d) {
       valider(d, champs, true);
       const n = base({ ...defauts(), ...d, id: d.id ?? nouvelId(prefixe) });
-      if (lire(n.id)) throw new ErreurHttp(409, `${nom} ${n.id} existe déjà.`);
+      // NOTE: identifiant unique sur toute la base, tous profils confondus
+      if (db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(n.id)) throw new ErreurHttp(409, `${nom} ${n.id} existe déjà.`);
       verifierCandidature(n.candidature_id);
       transaction(() => {
-        db.prepare(`INSERT INTO ${table} (id, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})`).run(n.id, ...cols.map(c => n[c]));
+        db.prepare(`INSERT INTO ${table} (id, ${aProfil ? 'profil_id, ' : ''}${cols.join(', ')}) VALUES (?, ${aProfil ? 'profil_actif(), ' : ''}${cols.map(() => '?').join(', ')})`).run(n.id, ...cols.map(c => n[c]));
         for (const l of tousLiens) ecrireLiens(l, n.id, d[l.champ] ?? []);
         journaliser(db, { entite, id: n.id, libelle: libelle(n), action: 'creation' });
       });
@@ -413,10 +438,11 @@ function collection({ table, nom, entite, libelle, prefixe, champs, defauts, ver
     },
     supprimer(id) {
       const avant = lire(id);
+      if (!avant) return 0;
       const n = transaction(() => {
         for (const l of tousLiens) db.prepare(`DELETE FROM ${l.table} WHERE ${l.cle} = ?`).run(id);
         const k = db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id).changes;
-        if (k && avant) journaliser(db, { entite, id, libelle: libelle(avant), action: 'suppression' });
+        if (k) journaliser(db, { entite, id, libelle: libelle(avant), action: 'suppression' });
         return k;
       });
       return n;
@@ -458,7 +484,7 @@ const competences = collection({
   libelle: c => c.competence,
   prefixe: 'c-',
   champs: { domaine: {}, competence: { requis: true }, enseigner: { type: 'niveau' }, executer: { type: 'niveau' }, note: {}, valide: { type: 'booleen' }, ordre: { type: 'nombre' }, poids: { type: 'poidsCompetence' } },
-  defauts: () => ({ poids: {}, ordre: Number(db.prepare('SELECT COALESCE(MAX(ordre), -1) + 1 AS n FROM competences').get()?.n) }),
+  defauts: () => ({ poids: {}, ordre: Number(db.prepare('SELECT COALESCE(MAX(ordre), -1) + 1 AS n FROM competences WHERE profil_id = profil_actif()').get()?.n) }),
   versFront: r => ({ id: r.id, domaine: r.domaine, competence: r.competence, enseigner: r.enseigner ?? null, executer: r.executer ?? null, note: r.note, valide: Boolean(r.valide), ordre: r.ordre, poids: lirePoidsCompetence(r.poids) }),
   versBase: d => ({ id: String(d.id), domaine: d.domaine ?? '', competence: d.competence ?? '', enseigner: d.enseigner ?? null, executer: d.executer ?? null, note: d.note ?? '', valide: d.valide ? 1 : 0, ordre: d.ordre ?? 0, poids: JSON.stringify(normaliserPoidsCompetence(d.poids)) }),
   ordre: 'ordre, id',
@@ -471,7 +497,7 @@ const formations = collection({
   libelle: f => f.titre,
   prefixe: 'f-',
   champs: { type: { valeurs: TYPES_FORMATION }, titre: { requis: true }, etablissement: {}, lieu: {}, debut: { type: 'periode' }, fin: { type: 'periode' }, matieres: {}, note: {}, ordre: { type: 'nombre' }, competences: { type: 'ids' } },
-  defauts: () => ({ type: 'titre_pro', ordre: Number(db.prepare('SELECT COALESCE(MAX(ordre), -1) + 1 AS n FROM formations').get()?.n) }),
+  defauts: () => ({ type: 'titre_pro', ordre: Number(db.prepare('SELECT COALESCE(MAX(ordre), -1) + 1 AS n FROM formations WHERE profil_id = profil_actif()').get()?.n) }),
   versFront: r => ({ id: r.id, type: r.type, titre: r.titre, etablissement: r.etablissement, lieu: r.lieu, debut: r.debut, fin: r.fin, matieres: r.matieres, note: r.note, ordre: r.ordre }),
   versBase: d => {
     if (erreurPeriode(d)) throw new ErreurHttp(400, erreurPeriode(d));
@@ -483,12 +509,14 @@ const formations = collection({
 });
 
 const verifierCompetences = ids => {
-  const inconnus = ids.filter(c => !db.prepare('SELECT 1 FROM competences WHERE id = ?').get(c));
+  const inconnus = ids.filter(c => !db.prepare('SELECT 1 FROM competences WHERE profil_id = profil_actif() AND id = ?').get(c));
   if (inconnus.length) throw new ErreurHttp(400, `Compétences introuvables : ${inconnus.join(', ')}.`);
 };
 
-// NOTE: intitulés d'une expérience par métier visé, dans l'ordre de METIERS_CV, vides retirés (même JSON pour une même saisie, comparé tel quel par le journal)
-const normaliserIntitules = v => Object.fromEntries(METIERS_CV.map(m => [m, String(v?.[m] ?? '').trim()]).filter(([, t]) => t));
+// NOTE: intitulés d'une expérience par métier visé, dans l'ordre de clesMetierDe (catalogue puis métiers créés), vides retirés (même JSON pour une même saisie, comparé tel quel par le journal)
+const normaliserIntitules = v => Object.fromEntries(clesMetierDe(v).map(m => [m, String(v?.[m] ?? '').trim()]).filter(([, t]) => t));
+// NOTE: catégorie d'une expérience ou d'une offre saisie à la main : catalogue, autre, ou métier créé par le profil
+const categoriesAdmises = () => [...CATEGORIES_OFFRE, ...lireMetiersPerso(db).map(m => m.cle)];
 const lirePoidsCompetence = s => { try { return normaliserPoidsCompetence(typeof s === 'string' ? JSON.parse(s) : s); } catch { return {}; } };
 const lirePoids = s => { try { return normaliserPoids(typeof s === 'string' ? JSON.parse(s) : s); } catch { return {}; } };
 const lireIntitules = s => { try { return normaliserIntitules(typeof s === 'string' ? JSON.parse(s) : s); } catch { return {}; } };
@@ -499,7 +527,7 @@ const experiences = collection({
   libelle: x => [x.poste, x.employeur].filter(Boolean).join(', '),
   prefixe: 'x-',
   champs: {
-    poste: { requis: true }, employeur: {}, lieu: {}, type: { valeurs: TYPES_EXPERIENCE }, categorie: { valeurs: CATEGORIES_OFFRE },
+    poste: { requis: true }, employeur: {}, lieu: {}, type: { valeurs: TYPES_EXPERIENCE }, categorie: { valeurs: categoriesAdmises },
     debut: { type: 'mois' }, fin: { type: 'mois' }, description: {}, ordre: { type: 'nombre' }, competences: { type: 'ids' }, intitules: { type: 'intitules' }, poids: { type: 'poids' },
   },
   defauts: () => ({ type: 'salarie', categorie: 'autre', ordre: 0, intitules: {}, poids: {} }),
@@ -543,6 +571,7 @@ const projets = collection({
 
 // NOTE: supprimer une compétence la retire des expériences et des titres enseignés qui la citent (pas de lien orphelin)
 const supprimerCompetence = id => transaction(() => {
+  if (!competences.lire(id)) return 0;
   db.prepare('DELETE FROM experience_competences WHERE competence_id = ?').run(id);
   db.prepare('DELETE FROM projet_competences WHERE competence_id = ?').run(id);
   db.prepare('DELETE FROM formation_competences WHERE competence_id = ?').run(id);
@@ -551,7 +580,7 @@ const supprimerCompetence = id => transaction(() => {
 
 // --- Contacts (schéma v11) : interlocuteurs liés aux offres par contact_offres ---
 const verifierOffres = ids => {
-  const inconnues = ids.filter(o => !db.prepare('SELECT 1 FROM offres WHERE id_offre = ?').get(o));
+  const inconnues = ids.filter(o => !offreVisible(o));
   if (inconnues.length) throw new ErreurHttp(400, `Offres introuvables : ${inconnues.join(', ')}.`);
 };
 
@@ -611,10 +640,12 @@ const rendezVous = collection({
 
 const COLLECTIONS = { taches, echanges, competences, formations, experiences, projets, contacts };
 
-// ANCHOR: profil (kv profil) : accroche et résumé, accroches et titres sous le nom par cible pour le CV, coordonnées du CV (TJM et salaire restent dans kv trajets)
-const CLES_ACCROCHES = ['general', ...METIERS_CV];
+// ANCHOR: profil (réglage profil du profil actif) : accroche et résumé, accroches et titres sous le nom par cible pour le CV, coordonnées du CV (TJM et salaire restent dans kv trajets)
+// NOTE: cibles des accroches, titres et résumés : général, métiers du catalogue et métiers créés par le profil (ligne 266)
+const clesAccroches = () => ['general', ...METIERS_CV, ...lireMetiersPerso(db).map(m => m.cle)];
 // NOTE: fusion avec le profil enregistré (actuel), un envoi partiel ne vide pas les champs absents
 function validerProfil(p, actuel = lireProfil()) {
+  const CLES_ACCROCHES = clesAccroches();
   if (typeof p !== 'object' || p === null || Array.isArray(p)) throw new ErreurHttp(400, 'profil : objet { accroche, resume, accroches, titres, resumes, contact } attendu.');
   const inconnus = Object.keys(p).filter(k => !['accroche', 'resume', 'accroches', 'titres', 'resumes', 'variantes', 'contact'].includes(k));
   if (inconnus.length) throw new ErreurHttp(400, `profil : champs inconnus : ${inconnus.join(', ')}.`);
@@ -634,6 +665,7 @@ function validerProfil(p, actuel = lireProfil()) {
 const CHAMPS_VARIANTES = ['titres', 'accroches', 'resumes'];
 const MAX_VARIANTES = 20;
 function validerVariantes(v) {
+  const CLES_ACCROCHES = clesAccroches();
   if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new ErreurHttp(400, 'profil.variantes doit être un objet { titres, accroches, resumes }.');
   const inconnus = Object.keys(v).filter(k => !CHAMPS_VARIANTES.includes(k));
   if (inconnus.length) throw new ErreurHttp(400, `profil.variantes : champs inconnus : ${inconnus.join(', ')}.`);
@@ -656,19 +688,19 @@ function validerVariantes(v) {
   }));
 }
 const lireProfil = () => {
-  const r = db.prepare("SELECT valeur FROM kv WHERE cle = 'profil'").get();
-  const p = r ? JSON.parse(String(r.valeur)) : {};
+  const CLES_ACCROCHES = clesAccroches();
+  const p = lireReglageProfil(db, 'profil') ?? {};
   return { accroche: '', resume: '', ...p, variantes: validerVariantes(p.variantes ?? {}), accroches: Object.fromEntries(CLES_ACCROCHES.map(k => [k, p.accroches?.[k] ?? ''])), titres: Object.fromEntries(CLES_ACCROCHES.map(k => [k, p.titres?.[k] ?? ''])), resumes: Object.fromEntries(CLES_ACCROCHES.map(k => [k, p.resumes?.[k] ?? ''])), contact: Object.fromEntries(CHAMPS_CONTACT.map(k => [k, p.contact?.[k] ?? ''])) };
 };
 
 // --- CV (schéma v8) : CV de référence (texte extrait du PDF) et versions exportées (instantanés figés) ---
 const META_REFERENCE = 'id, fichier, importe_le, pages, length(texte) AS caracteres';
 /** @type {(avecTexte?: boolean) => any} */
-const referenceActuelle = (avecTexte = false) => db.prepare(`SELECT ${avecTexte ? 'id, fichier, importe_le, pages, texte' : META_REFERENCE} FROM cv_references ORDER BY importe_le DESC, rowid DESC LIMIT 1`).get() ?? null;
+const referenceActuelle = (avecTexte = false) => db.prepare(`SELECT ${avecTexte ? 'id, fichier, importe_le, pages, texte' : META_REFERENCE} FROM cv_references WHERE profil_id = profil_actif() ORDER BY importe_le DESC, rowid DESC LIMIT 1`).get() ?? null;
 // NOTE: l'auteur d'une version (origine) vit dans le contenu JSON, sans colonne : vide pour les versions d'avant son enregistrement
 const versionFront = r => ({ id: r.id, nom: r.nom, cible: r.cible, categorie: r.categorie, offre_id: r.offre_id, candidature_id: r.candidature_id, reference_id: r.reference_id, cree_le: r.cree_le, ecarts: r.ecarts, avertissements: r.avertissements, origine: r.origine ?? '' });
-const listerVersions = () => db.prepare("SELECT *, json_extract(contenu, '$.origine') AS origine FROM cv_versions ORDER BY cree_le DESC").all().map(versionFront);
-const etatCv = () => ({ profil: lireProfil(), experiences: experiences.tout(), formations: formations.tout(), competences: competences.tout(), projets: projets.tout() });
+const listerVersions = () => db.prepare("SELECT *, json_extract(contenu, '$.origine') AS origine FROM cv_versions WHERE profil_id = profil_actif() ORDER BY cree_le DESC").all().map(versionFront);
+const etatCv = () => ({ profil: lireProfil(), experiences: experiences.tout(), formations: formations.tout(), competences: competences.tout(), projets: projets.tout(), metiers_perso: lireMetiersPerso(db) });
 
 // ANCHOR: extrait le texte d'un PDF avec pdftotext (poppler-utils) ; en cas d'échec la référence précédente reste en place
 function importerReference(pdf, fichier) {
@@ -688,7 +720,7 @@ function importerReference(pdf, fichier) {
   if (texte.replace(/\s/g, '').length < 200) throw new ErreurHttp(400, 'PDF sans texte exploitable (scanné ou image ?) : la référence précédente est conservée.');
   const ligne = { id: nouvelId('r-'), fichier: String(fichier || 'cv.pdf').slice(0, 200), importe_le: new Date().toISOString(), pages: (texte.match(/\f/g) ?? []).length || 1, texte };
   transaction(() => {
-    db.prepare('INSERT INTO cv_references (id, fichier, importe_le, pages, texte) VALUES (?, ?, ?, ?, ?)').run(ligne.id, ligne.fichier, ligne.importe_le, ligne.pages, ligne.texte);
+    db.prepare('INSERT INTO cv_references (id, profil_id, fichier, importe_le, pages, texte) VALUES (?, profil_actif(), ?, ?, ?, ?)').run(ligne.id, ligne.fichier, ligne.importe_le, ligne.pages, ligne.texte);
     journaliser(db, { entite: 'cv_reference', id: ligne.id, libelle: ligne.fichier, action: 'creation' });
   });
   return referenceActuelle();
@@ -698,14 +730,14 @@ function importerReference(pdf, fichier) {
 async function composer(d) {
   if (typeof d !== 'object' || d === null) throw new ErreurHttp(400, 'Objet JSON attendu : { cible, categorie?, offre_id? }.');
   // NOTE: le champ angle a été renommé metier (schéma v26) : l'ignorer en silence composerait le CV pour un mauvais métier
-  if ('angle' in d) throw new ErreurHttp(400, 'Le champ angle a été renommé metier (general, comptabilite, formateur_digital, web_design ou dev_web).');
+  if ('angle' in d) throw new ErreurHttp(400, `Le champ angle a été renommé metier (general, un métier du catalogue : ${METIERS_CV.join(', ')}, ou un métier créé).`);
   const etat = etatCv();
   /** @type {any} */
   let offre = null;
   let categorie = d.categorie ?? '';
   let prioritaires = [];
   // NOTE: choix du modèle (metier, prioritaires) validés pour toute cible, appliqués seulement à une offre
-  if (d.metier !== undefined && d.metier !== 'general' && !METIERS_CV.includes(d.metier)) throw new ErreurHttp(400, `Métier inconnu : ${String(d.metier).slice(0, 40)}.`);
+  if (d.metier !== undefined && d.metier !== 'general' && !estCleMetier(d.metier)) throw new ErreurHttp(400, `Métier inconnu : ${String(d.metier).slice(0, 40)}.`);
   if (d.prioritaires !== undefined && (!Array.isArray(d.prioritaires) || d.prioritaires.some(id => typeof id !== 'string'))) throw new ErreurHttp(400, 'prioritaires : liste d\'identifiants de compétences attendue.');
   if (d.cible === 'offre') {
     offre = d.offre_id ? lireOffre(String(d.offre_id)) : null;
@@ -713,7 +745,7 @@ async function composer(d) {
     // NOTE: sans analyse (Ollama en panne ou désactivé), le ciblage se fait sur le titre et l'annonce ; sans annonce, sur la seule catégorie
     const logiciels = offre.analyse?.reponses?.logiciels ?? offre.analyse?.logiciels ?? [];
     prioritaires = prioritairesOffre(etat.competences, { titre: offre.titre, annonce: [offre.annonce, ...logiciels].join(' ') });
-    categorie = categorie || (METIERS_CV.includes(offre.categorie) ? offre.categorie : '');
+    categorie = categorie || (offre.categorie !== 'autre' ? offre.categorie : '');
     // NOTE: métier explicite (choisi par le modèle) : 'general' est un vrai choix, il n'est pas remplacé par la catégorie de l'offre
     if (d.metier !== undefined) categorie = d.metier === 'general' ? '' : d.metier;
     // NOTE: compétences choisies par le modèle (assemblage) : seuls les identifiants du Profil de niveau suffisant sont repris (même seuil que l'assemblage), en plus de celles trouvées dans l'annonce
@@ -749,7 +781,7 @@ async function produirePdf(d) {
   const controle = controlerCv(document, ref?.texte ?? '', texteProfil(etatCv()));
   let pdf;
   try {
-    pdf = await cvPdf(document, { photo: lirePhoto(DOSSIER_DONNEES) });
+    pdf = await cvPdf(document, { photo: lirePhoto(dossierDonnees()) });
   } catch (e) {
     throw new ErreurHttp(500, `Génération du PDF impossible (${String(e.message ?? e)}) : aucune version enregistrée.`);
   }
@@ -757,7 +789,7 @@ async function produirePdf(d) {
   const origine = ['algorithme', 'qwen', 'claude'].includes(d.origine) ? d.origine : 'claude';
   const v = { id: nouvelId('v-'), nom: typeof d.nom === 'string' && d.nom.trim() ? d.nom.trim().replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) : nomCv(document), cree_le: new Date().toISOString() };
   transaction(() => {
-    db.prepare('INSERT INTO cv_versions (id, nom, cible, categorie, offre_id, candidature_id, reference_id, cree_le, ecarts, avertissements, contenu) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    db.prepare('INSERT INTO cv_versions (id, profil_id, nom, cible, categorie, offre_id, candidature_id, reference_id, cree_le, ecarts, avertissements, contenu) VALUES (?, profil_actif(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(v.id, v.nom, document.cible, document.categorie, document.offre_id || null, candidature || null, ref?.id ?? null, v.cree_le, controle.ecarts, controle.avertissements, JSON.stringify({ document, controle, origine }));
     journaliser(db, { entite: 'cv', id: v.id, libelle: v.nom, action: 'creation' });
   });
@@ -773,23 +805,24 @@ function envoyerFichier(res, nom, format, fichier, entetes = {}) {
 // ANCHOR: suppression d'une version de CV ou de lettre, journalisée (table et entité fixées par le code appelant)
 function supprimerVersion(table, entite, v) {
   transaction(() => {
-    db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(v.id);
+    db.prepare(`DELETE FROM ${table} WHERE profil_id = profil_actif() AND id = ?`).run(v.id);
     journaliser(db, { entite, id: String(v.id), libelle: String(v.nom), action: 'suppression' });
   });
 }
 
 // --- Lettres de motivation (schéma v23) : un brouillon par offre ou candidature (le textarea de l'interface, que Claude réécrit par l'API), versions exportées figées ---
-const DOSSIER_DONNEES = join(ici, 'data');
+// NOTE: dossier des fichiers du profil actif (data/ pour le profil par défaut, data/profils/<id>/ pour les autres)
+const dossierDonnees = () => dossierProfil(ici, db);
 const lireJson = (t, defaut) => { try { return JSON.parse(String(t)); } catch { return defaut; } };
 const brouillonFront = r => ({ cle: r.cle, offre_id: r.offre_id, candidature_id: r.candidature_id, objet: r.objet, destinataire: r.destinataire, texte: r.texte, matrice: validerMatrice(lireJson(r.matrice, {})), origine: r.origine, maj_le: r.maj_le, generation: lireJson(r.generation, {}) });
 const lettreVersionFront = r => ({ id: r.id, nom: r.nom, offre_id: r.offre_id, candidature_id: r.candidature_id, cree_le: r.cree_le, ecarts: r.ecarts, avertissements: r.avertissements, origine: r.origine ?? '' });
-const listerLettres = () => db.prepare("SELECT *, json_extract(contenu, '$.origine') AS origine FROM lettre_versions ORDER BY cree_le DESC").all().map(lettreVersionFront);
-const lireStyleLettre = () => validerStyle(lireJson(db.prepare("SELECT valeur FROM kv WHERE cle = 'lettre_style'").get()?.valeur, {}));
-const lireMatriceLettre = () => validerMatrice(lireJson(db.prepare("SELECT valeur FROM kv WHERE cle = 'lettre_matrice'").get()?.valeur, {}));
+const listerLettres = () => db.prepare("SELECT *, json_extract(contenu, '$.origine') AS origine FROM lettre_versions WHERE profil_id = profil_actif() ORDER BY cree_le DESC").all().map(lettreVersionFront);
+const lireStyleLettre = () => validerStyle(lireReglageProfil(db, 'lettre_style') ?? {});
+const lireMatriceLettre = () => validerMatrice(lireReglageProfil(db, 'lettre_matrice') ?? {});
 
 // NOTE: la clé d'un brouillon est l'identifiant de l'offre, ou celui de la candidature quand elle n'a pas d'offre (candidature spontanée)
 // NOTE: clé « metier:<métier> » = lettre générique du métier visé (comme les CV par métier), sans offre ni candidature
-const metierLettre = cle => { const a = /^metier:(.+)$/.exec(String(cle))?.[1]; return a && METIERS_CV.includes(a) ? a : ''; };
+const metierLettre = cle => { const a = /^metier:(.+)$/.exec(String(cle))?.[1]; return a && estCleMetier(a) ? a : ''; };
 function cibleLettre(cle) {
   const metier = metierLettre(cle);
   if (metier) return { offre: null, candidature: null, metier };
@@ -797,8 +830,8 @@ function cibleLettre(cle) {
   const offre = db.prepare('SELECT id_offre, titre, entreprise, lieu, annonce FROM offres WHERE id_offre = ?').get(cle) ?? null;
   /** @type {any} */
   const candidature = (offre
-    ? db.prepare('SELECT id, entreprise, poste, lettre FROM candidatures WHERE offre_id = ? ORDER BY date DESC LIMIT 1').get(cle)
-    : db.prepare('SELECT id, entreprise, poste, lettre FROM candidatures WHERE id = ?').get(cle)) ?? null;
+    ? db.prepare('SELECT id, entreprise, poste, lettre FROM candidatures WHERE profil_id = profil_actif() AND offre_id = ? ORDER BY date DESC LIMIT 1').get(cle)
+    : db.prepare('SELECT id, entreprise, poste, lettre FROM candidatures WHERE profil_id = profil_actif() AND id = ?').get(cle)) ?? null;
   if (!offre && !candidature) throw new ErreurHttp(404, `Offre ou candidature ${String(cle).slice(0, 100)} introuvable.`);
   return { offre, candidature, metier: '' };
 }
@@ -815,7 +848,7 @@ function ecrireBrouillon(cle, d) {
   if ('origine' in d && !ORIGINES_LETTRE.includes(d.origine)) throw new ErreurHttp(400, `origine : ${ORIGINES_LETTRE.join(', ')}.`);
   const { offre, candidature, metier } = cibleLettre(cle);
   /** @type {any} */
-  const avant = db.prepare('SELECT * FROM lettre_brouillons WHERE cle = ?').get(cle);
+  const avant = db.prepare('SELECT * FROM lettre_brouillons WHERE profil_id = profil_actif() AND cle = ?').get(cle);
   if ('generation' in d && (typeof d.generation !== 'object' || d.generation === null || Array.isArray(d.generation))) throw new ErreurHttp(400, 'generation : objet { modele?, duree_ms?, declencheur? }.');
   if (avant && typeof d.base_maj_le === 'string' && d.base_maj_le !== avant.maj_le) throw new ErreurHttp(409, 'La lettre a été modifiée ailleurs (Claude ou un autre onglet) : rechargez-la avant d\'enregistrer.');
   const n = {
@@ -828,52 +861,55 @@ function ecrireBrouillon(cle, d) {
   // ANCHOR: trace de la dernière génération du texte : fournie par l'appelant (modèle local), posée pour Claude, sinon conservée ; la date est celle de l'écriture
   const genere = d.generation ?? (d.origine === 'claude' && 'texte' in d ? { modele: 'Claude', declencheur: 'reecriture' } : null);
   n.generation = JSON.stringify(genere ? { modele: String(genere.modele ?? '').slice(0, 80), duree_ms: Number.isFinite(genere.duree_ms) ? Math.round(genere.duree_ms) : 0, declencheur: String(genere.declencheur ?? '').slice(0, 40), le: n.maj_le } : lireJson(avant?.generation, {}));
-  const libelle = metier ? `Lettre générique · ${LIBELLES_METIER[metier]}` : [offre?.entreprise ?? candidature?.entreprise, offre?.titre ?? candidature?.poste].filter(Boolean).join(' · ');
+  const libelle = metier ? `Lettre générique · ${libelleMetier(metier, lireMetiersPerso(db))}` : [offre?.entreprise ?? candidature?.entreprise, offre?.titre ?? candidature?.poste].filter(Boolean).join(' · ');
   // NOTE: le journal garde le nombre de mots du texte, pas le texte entier (plusieurs Ko à chaque frappe enregistrée)
   // NOTE: l'empreinte courte distingue deux textes de même longueur (« neuf » devenu « onze ») : sans elle, la modification n'était ni vue ni enregistrée
   const resume = r => ({ ...r, texte: r ? `${compterMots(r.texte)} mots (${createHash('sha1').update(String(r.texte)).digest('hex').slice(0, 6)})` : '' });
   const changements = avant ? differences(resume(avant), resume(n), ['objet', 'destinataire', 'texte', 'origine', 'matrice']) : [];
   if (avant && !changements.length) return brouillonFront(avant);
   transaction(() => {
-    db.prepare(`INSERT INTO lettre_brouillons (cle, offre_id, candidature_id, objet, destinataire, texte, matrice, origine, maj_le, generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(cle) DO UPDATE SET offre_id = excluded.offre_id, candidature_id = excluded.candidature_id, objet = excluded.objet, destinataire = excluded.destinataire, texte = excluded.texte, matrice = excluded.matrice, origine = excluded.origine, maj_le = excluded.maj_le, generation = excluded.generation`)
+    db.prepare(`INSERT INTO lettre_brouillons (profil_id, cle, offre_id, candidature_id, objet, destinataire, texte, matrice, origine, maj_le, generation) VALUES (profil_actif(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(profil_id, cle) DO UPDATE SET offre_id = excluded.offre_id, candidature_id = excluded.candidature_id, objet = excluded.objet, destinataire = excluded.destinataire, texte = excluded.texte, matrice = excluded.matrice, origine = excluded.origine, maj_le = excluded.maj_le, generation = excluded.generation`)
       .run(n.cle, n.offre_id, n.candidature_id, n.objet, n.destinataire, n.texte, n.matrice, n.origine, n.maj_le, n.generation);
     journaliser(db, { entite: 'lettre', id: cle, libelle, action: avant ? 'modification' : 'creation', changements });
   });
-  return brouillonFront(db.prepare('SELECT * FROM lettre_brouillons WHERE cle = ?').get(cle));
+  return brouillonFront(db.prepare('SELECT * FROM lettre_brouillons WHERE profil_id = profil_actif() AND cle = ?').get(cle));
 }
 
 // ANCHOR: brouillon préparé en arrière-plan (ligne 179) : lancé après l'assemblage du CV depuis une offre, ou à l'arrivée sur une lettre vide.
 // Passe par la file du modèle local (après le CV déjà demandé) et n'écrit que si la lettre est toujours vide : jamais d'écrasement d'un texte de l'utilisateur ou de Claude.
 /** @type {Map<string, { etat: 'attente' | 'ok' | 'echec', debut: string, modele?: string, duree_ms?: number, erreur?: string, code?: string }>} */
 const preparations = new Map();
-const texteBrouillon = cle => String(/** @type {any} */ (db.prepare('SELECT texte FROM lettre_brouillons WHERE cle = ?').get(cle))?.texte ?? '').trim();
+const clePreparation = idOffre => `${profilActif(db)}|${idOffre}`;
+const texteBrouillon = cle => String(/** @type {any} */ (db.prepare('SELECT texte FROM lettre_brouillons WHERE profil_id = profil_actif() AND cle = ?').get(cle))?.texte ?? '').trim();
 function preparerLettre(idOffre) {
   const { offre } = cibleLettre(idOffre);
   if (!offre) throw new ErreurHttp(404, `Offre ${String(idOffre).slice(0, 100)} introuvable.`);
   if (texteBrouillon(idOffre)) return { etat: 'existe' };
   // NOTE: états terminés oubliés après une heure (la Map ne grossit pas)
   for (const [k, v] of preparations) if (v.etat !== 'attente' && Date.now() - Date.parse(v.debut) > 3_600_000) preparations.delete(k);
-  const deja = preparations.get(idOffre);
+  // NOTE: une préparation par profil et par offre
+  const cleP = clePreparation(idOffre);
+  const deja = preparations.get(cleP);
   if (deja?.etat === 'attente') return deja;
   /** @type {any} */
   const p = { etat: 'attente', debut: new Date().toISOString() };
-  preparations.set(idOffre, p);
+  preparations.set(cleP, p);
   redigerLettre(db, idOffre, lireMatriceLettre()).then(r => {
     if (!texteBrouillon(idOffre)) {
       /** @type {any} */
-      const avant = db.prepare('SELECT objet, destinataire FROM lettre_brouillons WHERE cle = ?').get(idOffre);
+      const avant = db.prepare('SELECT objet, destinataire FROM lettre_brouillons WHERE profil_id = profil_actif() AND cle = ?').get(idOffre);
       ecrireBrouillon(idOffre, { texte: r.texte, objet: avant?.objet || r.objet, destinataire: avant?.destinataire || [offre.entreprise, offre.lieu].filter(Boolean).join('\n'), matrice: r.matrice, origine: 'qwen', generation: { modele: r.modele, duree_ms: r.duree_ms, declencheur: 'auto' } });
     }
-    preparations.set(idOffre, { etat: 'ok', debut: p.debut, modele: r.modele, duree_ms: r.duree_ms });
-  }, e => preparations.set(idOffre, { etat: 'echec', debut: p.debut, erreur: String(e.message ?? e), code: e.code }));
+    preparations.set(cleP, { etat: 'ok', debut: p.debut, modele: r.modele, duree_ms: r.duree_ms });
+  }, e => preparations.set(cleP, { etat: 'echec', debut: p.debut, erreur: String(e.message ?? e), code: e.code }));
   return p;
 }
 
 // NOTE: lettres déjà rédigées pour d'autres candidatures (dernière version de chacune), source du conseil « repetition » ; la lettre en cours est exclue
 function lettresPrecedentes(cle, candidatureId) {
   const vues = new Set();
-  return /** @type {any[]} */ (db.prepare("SELECT nom, offre_id, candidature_id, contenu FROM lettre_versions WHERE candidature_id IS NOT NULL AND candidature_id <> '' ORDER BY cree_le DESC").all()).flatMap(v => {
+  return /** @type {any[]} */ (db.prepare("SELECT nom, offre_id, candidature_id, contenu FROM lettre_versions WHERE profil_id = profil_actif() AND candidature_id IS NOT NULL AND candidature_id <> '' ORDER BY cree_le DESC").all()).flatMap(v => {
     if (vues.has(v.candidature_id) || v.candidature_id === candidatureId || (cle && v.offre_id === cle)) return [];
     vues.add(v.candidature_id);
     const texte = lireJson(v.contenu, {})?.lettre?.texte;
@@ -902,21 +938,21 @@ async function exporterLettre(d, format) {
   const cible = d.cle ? cibleLettre(String(d.cle)) : { offre: null, candidature: null, metier: '' };
   const candidature = d.candidature_id ? String(d.candidature_id) : cible.candidature?.id ?? '';
   verifierCandidature(candidature);
-  const matrice = d.cle ? validerMatrice(lireJson(db.prepare('SELECT matrice FROM lettre_brouillons WHERE cle = ?').get(String(d.cle))?.matrice, lireMatriceLettre())) : lireMatriceLettre();
+  const matrice = d.cle ? validerMatrice(lireJson(db.prepare('SELECT matrice FROM lettre_brouillons WHERE profil_id = profil_actif() AND cle = ?').get(String(d.cle))?.matrice, lireMatriceLettre())) : lireMatriceLettre();
   const controle = controleLettre(lettre.texte, d.cle ? String(d.cle) : '', matrice);
-  const signature = lireSignature(DOSSIER_DONNEES);
+  const signature = lireSignature(dossierDonnees());
   let fichier;
   try {
     fichier = format === 'docx' ? lettreDocx(lettre, { signature }) : await lettrePdf(lettre, { signature });
   } catch (e) {
     throw new ErreurHttp(500, `Génération du fichier impossible (${String(e.message ?? e)}) : aucune version enregistrée.`);
   }
-  const c = candidature ? /** @type {any} */ (db.prepare('SELECT entreprise, poste, lettre FROM candidatures WHERE id = ?').get(candidature)) : null;
-  const nomPropose = cible.metier && !c ? nomLettre({ nom: lettre.entete.nom, poste: LIBELLES_METIER[cible.metier] }) : nomLettre({ nom: lettre.entete.nom, entreprise: cible.offre?.entreprise ?? c?.entreprise ?? '', poste: cible.offre?.titre ?? c?.poste ?? '' });
+  const c = candidature ? /** @type {any} */ (db.prepare('SELECT entreprise, poste, lettre FROM candidatures WHERE profil_id = profil_actif() AND id = ?').get(candidature)) : null;
+  const nomPropose = cible.metier && !c ? nomLettre({ nom: lettre.entete.nom, poste: libelleMetier(cible.metier, lireMetiersPerso(db)) }) : nomLettre({ nom: lettre.entete.nom, entreprise: cible.offre?.entreprise ?? c?.entreprise ?? '', poste: cible.offre?.titre ?? c?.poste ?? '' });
   const v = { id: nouvelId('l-'), nom: typeof d.nom === 'string' && d.nom.trim() ? d.nom.trim().replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) : nomPropose, cree_le: new Date().toISOString() };
   const origine = ORIGINES_LETTRE.includes(d.origine) ? d.origine : 'utilisateur';
   transaction(() => {
-    db.prepare('INSERT INTO lettre_versions (id, nom, offre_id, candidature_id, cree_le, ecarts, avertissements, contenu) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    db.prepare('INSERT INTO lettre_versions (id, profil_id, nom, offre_id, candidature_id, cree_le, ecarts, avertissements, contenu) VALUES (?, profil_actif(), ?, ?, ?, ?, ?, ?, ?)')
       .run(v.id, v.nom, cible.offre?.id_offre ?? null, candidature || null, v.cree_le, controle.ecarts, controle.avertissements, JSON.stringify({ lettre, controle, matrice, origine, format }));
     journaliser(db, { entite: 'lettre_version', id: v.id, libelle: v.nom, action: 'creation' });
     if (c && !c.lettre) modifierCandidature(candidature, { lettre: true });
@@ -927,19 +963,18 @@ async function exporterLettre(d, format) {
 // NOTE: une lettre déjà exportée pour l'offre (sans candidature) suit la candidature créée, comme les CV (rattacherCvs)
 function rattacherLettres(idOffre, idCandidature) {
   // NOTE: comme pour le CV, une seule version est liée (la plus récente) ; les essais précédents restent libres
-  const v = db.prepare('SELECT id, nom FROM lettre_versions WHERE offre_id = ? AND candidature_id IS NULL ORDER BY cree_le DESC LIMIT 1').get(idOffre);
+  const v = db.prepare('SELECT id, nom FROM lettre_versions WHERE profil_id = profil_actif() AND offre_id = ? AND candidature_id IS NULL ORDER BY cree_le DESC LIMIT 1').get(idOffre);
   if (v) {
     db.prepare('UPDATE lettre_versions SET candidature_id = ? WHERE id = ?').run(idCandidature, v.id);
     journaliser(db, { entite: 'lettre_version', id: String(v.id), libelle: String(v.nom), action: 'modification', changements: [{ champ: 'candidature_id', avant: '', apres: idCandidature }] });
   }
-  db.prepare('UPDATE lettre_brouillons SET candidature_id = ? WHERE cle = ? AND candidature_id IS NULL').run(idCandidature, idOffre);
+  db.prepare('UPDATE lettre_brouillons SET candidature_id = ? WHERE profil_id = profil_actif() AND cle = ? AND candidature_id IS NULL').run(idCandidature, idOffre);
 }
 
 // --- État complet : parcours, profil, conseils, to-do, candidatures, tâches et échanges ---
 function lireEtat() {
-  const kv = Object.fromEntries(db.prepare('SELECT cle, valeur FROM kv').all().map(r => [r.cle, JSON.parse(String(r.valeur))]));
   return {
-    candidatures: db.prepare('SELECT * FROM candidatures').all().map(versFront),
+    candidatures: db.prepare('SELECT * FROM candidatures WHERE profil_id = profil_actif()').all().map(versFront),
     taches: taches.tout(),
     echanges: echanges.tout(),
     competences: competences.tout(),
@@ -954,10 +989,10 @@ function lireEtat() {
     lettreVersions: listerLettres(),
     lettreMatrice: lireMatriceLettre(),
     lettreStyle: lireStyleLettre(),
-    signature: Boolean(lireSignature(DOSSIER_DONNEES)),
-    photo: Boolean(lirePhoto(DOSSIER_DONNEES)),
-    conseils: kv.conseils ?? '',
-    todo: kv.todo ?? '',
+    signature: Boolean(lireSignature(dossierDonnees())),
+    photo: Boolean(lirePhoto(dossierDonnees())),
+    conseils: lireReglageProfil(db, 'conseils') ?? '',
+    todo: lireReglageProfil(db, 'todo') ?? '',
   };
 }
 
@@ -971,7 +1006,7 @@ function ecrireEtat(etat) {
   transaction(() => {
     if (Array.isArray(etat.candidatures)) {
       /** @type {Map<any, any>} */
-      const existantes = new Map(db.prepare('SELECT * FROM candidatures').all().map(r => [r.id, r]));
+      const existantes = new Map(db.prepare('SELECT * FROM candidatures WHERE profil_id = profil_actif()').all().map(r => [r.id, r]));
       for (const d of etat.candidatures) {
         valider(d, CHAMPS_CANDIDATURE, true);
         const n = versBase(d);
@@ -980,26 +1015,31 @@ function ecrireEtat(etat) {
         if (avant && !('lieux' in d)) n.lieux = avant.lieux;
         if (avant && !('lien' in d)) n.lien = avant.lien;
         if (avant && !('enseignements' in d)) n.enseignements = avant.enseignements;
+        if (!avant && db.prepare('SELECT 1 FROM candidatures WHERE id = ?').get(n.id)) throw new ErreurHttp(409, `La candidature ${n.id} existe déjà.`);
         if ((avant?.offre_id ?? null) !== n.offre_id) verifierOffre(n, n.id);
         if (!avant) insererCandidature(n);
         else if (COLS.some(c => (avant[c] ?? null) !== (n[c] ?? null))) remplacerCandidature(n, avant);
       }
     }
-    const kv = db.prepare('INSERT INTO kv (cle, valeur) VALUES (?, ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur');
-    if (profil) kv.run('profil', JSON.stringify(profil));
-    if (typeof etat.conseils === 'string') kv.run('conseils', JSON.stringify(etat.conseils));
-    if (typeof etat.todo === 'string') kv.run('todo', JSON.stringify(etat.todo));
+    if (profil) ecrireReglageProfil(db, 'profil', profil);
+    if (typeof etat.conseils === 'string') ecrireReglageProfil(db, 'conseils', etat.conseils);
+    if (typeof etat.todo === 'string') ecrireReglageProfil(db, 'todo', etat.todo);
   });
 }
 
 // --- Offres : synchronisées (France Travail) ou saisies à la main (id man-...) ---
-const SELECT_OFFRE = `SELECT o.*, (SELECT c.id FROM candidatures c WHERE c.offre_id = o.id_offre LIMIT 1) AS candidature_id, (SELECT json_insert(a.reponses, '$.provider', a.provider, '$.modele', a.modele, '$.date', a.date, '$.duree_ms', a.duree_ms) FROM analyses a WHERE a.id_offre = o.id_offre) AS analyse_json FROM offres o`;
+// NOTE: faits de l'annonce (offres, partagée) et état du profil (offre_suivis) sous les noms d'avant la v32 ; jointure interne, seules les offres suivies par le profil existent pour lui
+const SELECT_OFFRE = `SELECT o.*, s.proche, s.ignoree, s.vue, s.postuler_via, s.description, s.epinglee_le, (SELECT c.id FROM candidatures c WHERE c.profil_id = profil_actif() AND c.offre_id = o.id_offre LIMIT 1) AS candidature_id, (SELECT json_insert(a.reponses, '$.provider', a.provider, '$.modele', a.modele, '$.date', a.date, '$.duree_ms', a.duree_ms) FROM analyses a WHERE a.profil_id = profil_actif() AND a.id_offre = o.id_offre) AS analyse_json FROM offres o JOIN offre_suivis s ON s.id_offre = o.id_offre AND s.profil_id = profil_actif()`;
 
 // ANCHOR: l'analyse du modèle (réponses et note calculée) remplace la colonne brute analyse_json, null si l'offre n'est pas analysée
 // NOTE: années du parcours par catégorie, lues à chaque requête (quelques lignes) pour que la note suive les modifications du Profil
 const anneesProfil = () => anneesParCategorie(experiences.tout());
 /** @type {(annees: Record<string, number>) => (o: Record<string, any>) => Record<string, any>} */
-const finOffre = annees => ({ analyse_json, ...o }) => ({ ...o, ...etatEpingle(o.epinglee_le), analyse: lireAnalyse(analyse_json, { anneesProfil: annees[o.categorie] ?? 0 }) });
+// NOTE: catégorie vue par le profil (lignes 260 et 266) : un métier créé dont les mots sont dans le titre, sinon la catégorie commune si elle est dans sa liste, sinon autre
+const finOffre = (annees, vue = vueProfil(db)) => ({ analyse_json, ...o }) => {
+  const categorie = vue(o.titre, o.categorie);
+  return { ...o, categorie, ...etatEpingle(o.epinglee_le), analyse: lireAnalyse(analyse_json, { anneesProfil: annees[categorie] ?? 0 }) };
+};
 // ANCHOR: épingle d'une offre : active pendant JOURS_EPINGLE jours à partir de la date d'épinglage, jours_epingle = jours restants (0 = expire aujourd'hui)
 const etatEpingle = (le = '') => {
   const restant = le ? JOURS_EPINGLE - Math.round((Date.parse(aujourdhui()) - Date.parse(le)) / 86400000) : 0;
@@ -1012,29 +1052,34 @@ const CHAMPS_OFFRE_LIBRES = { ignoree: { type: 'booleen' }, vue: { type: 'boolee
 const CHAMPS_OFFRE_MANUELLE = {
   ...CHAMPS_OFFRE_LIBRES,
   titre: { requis: true }, entreprise: {}, ville: {}, departement: {}, contrat: {}, salaire: {}, lien: { type: 'url' }, source: {}, annonce: {},
-  date_detection: { type: 'date' }, categorie: { valeurs: CATEGORIES_OFFRE },
+  date_detection: { type: 'date' }, categorie: { valeurs: categoriesAdmises },
 };
-const COLS_OFFRE = ['titre', 'entreprise', 'lieu', 'departement', 'ville', 'proche', 'contrat', 'salaire', 'lien', 'date_detection', 'categorie', 'ignoree', 'vue', 'expiree', 'source', 'postuler_via', 'description', 'annonce', 'epinglee_le'];
+// NOTE: colonnes de la table partagée et colonnes de l'état du profil (offre_suivis)
+const COLS_FAITS = ['titre', 'entreprise', 'lieu', 'departement', 'ville', 'contrat', 'salaire', 'lien', 'date_detection', 'categorie', 'expiree', 'source', 'annonce'];
+const COLS_SUIVI = ['proche', 'ignoree', 'vue', 'postuler_via', 'description', 'epinglee_le'];
+const COLS_OFFRE = [...COLS_FAITS, ...COLS_SUIVI];
 
 function listerOffres(q) {
   const where = [];
   const params = [];
-  if (q.get('categorie')) { where.push('o.categorie = ?'); params.push(q.get('categorie')); }
+  const categorie = q.get('categorie');
+  // NOTE: filtre sur la catégorie vue par le profil (fonction SQL categorie_vue, lib/metiers-profil.mjs) : « autre » regroupe les métiers hors de sa liste
+  if (categorie) { where.push('categorie_vue(o.titre, o.categorie) = ?'); params.push(categorie); }
   if (q.get('contrat')) { where.push('o.contrat = ?'); params.push(q.get('contrat')); }
   if (q.get('source')) { where.push('o.source = ?'); params.push(q.get('source')); }
   if (q.get('manuelles') === '1') where.push("o.id_offre LIKE 'man-%'");
   if (q.get('manuelles') === '0') where.push("o.id_offre NOT LIKE 'man-%'");
   const zone = q.get('zone');
-  if (zone === 'proche') where.push('o.proche = 1');
+  if (zone === 'proche') where.push('s.proche = 1');
   else if (/^(\d{2,3}|2[AB])$/.test(zone || '')) { where.push('o.departement = ?'); params.push(zone); }
-  if (q.get('ignorees') === '0' || q.get('ignorees') === '1') { where.push('o.ignoree = ?'); params.push(Number(q.get('ignorees'))); }
-  if (q.get('vues') === '0' || q.get('vues') === '1') { where.push('o.vue = ?'); params.push(Number(q.get('vues'))); }
+  if (q.get('ignorees') === '0' || q.get('ignorees') === '1') { where.push('s.ignoree = ?'); params.push(Number(q.get('ignorees'))); }
+  if (q.get('vues') === '0' || q.get('vues') === '1') { where.push('s.vue = ?'); params.push(Number(q.get('vues'))); }
   if (q.get('expirees') === '0' || q.get('expirees') === '1') { where.push('o.expiree = ?'); params.push(Number(q.get('expirees'))); }
-  if (q.get('epinglees') === '1') { where.push("o.epinglee_le != '' AND o.epinglee_le > date('now', 'localtime', ?)"); params.push(`-${JOURS_EPINGLE} days`); }
-  if (q.get('suivie') === '1') where.push('EXISTS (SELECT 1 FROM candidatures c WHERE c.offre_id = o.id_offre)');
-  if (q.get('suivie') === '0') where.push('NOT EXISTS (SELECT 1 FROM candidatures c WHERE c.offre_id = o.id_offre)');
+  if (q.get('epinglees') === '1') { where.push("s.epinglee_le != '' AND s.epinglee_le > date('now', 'localtime', ?)"); params.push(`-${JOURS_EPINGLE} days`); }
+  if (q.get('suivie') === '1') where.push('EXISTS (SELECT 1 FROM candidatures c WHERE c.profil_id = profil_actif() AND c.offre_id = o.id_offre)');
+  if (q.get('suivie') === '0') where.push('NOT EXISTS (SELECT 1 FROM candidatures c WHERE c.profil_id = profil_actif() AND c.offre_id = o.id_offre)');
   if (q.get('q')) {
-    where.push("(o.titre || ' ' || o.entreprise || ' ' || o.ville || ' ' || o.description || ' ' || o.annonce) LIKE ? ESCAPE '\\'");
+    where.push("(o.titre || ' ' || o.entreprise || ' ' || o.ville || ' ' || s.description || ' ' || o.annonce) LIKE ? ESCAPE '\\'");
     params.push('%' + q.get('q').replace(/[\\%_]/g, c => '\\' + c) + '%');
   }
   let sql = `${SELECT_OFFRE}${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY o.date_detection DESC, o.id_offre DESC`;
@@ -1057,7 +1102,7 @@ function completerOffre(o, titreChange) {
     departement,
     ville,
     lieu: departement && ville ? `${departement} - ${ville}` : departement || ville,
-    proche: estProche(departement, ville),
+    proche: estProche(departement, ville, lireZoneProfil(db)),
     categorie: titreChange ? classer(o.titre) : o.categorie,
   };
 }
@@ -1066,11 +1111,12 @@ function creerOffre(b) {
   valider(b, CHAMPS_OFFRE_MANUELLE, true);
   const id = b.id ?? nouvelId('man-');
   if (!estManuelle(id)) throw new ErreurHttp(400, "L'identifiant d'une offre saisie à la main commence par man-.");
-  if (lireOffre(id)) throw new ErreurHttp(409, `L'offre ${id} existe déjà.`);
+  if (db.prepare('SELECT 1 FROM offres WHERE id_offre = ?').get(id)) throw new ErreurHttp(409, `L'offre ${id} existe déjà.`);
   const vide = Object.fromEntries(COLS_OFFRE.map(c => [c, '']));
   const o = completerOffre({ ...vide, date_detection: aujourdhui(), ...b, source: b.source?.trim() || 'Saisie manuelle', ignoree: b.ignoree ? 1 : 0, vue: b.vue ? 1 : 0, expiree: b.expiree ? 1 : 0, titre: b.titre.trim() }, !b.categorie);
   transaction(() => {
-    db.prepare(`INSERT INTO offres (id_offre, ${COLS_OFFRE.join(', ')}) VALUES (?, ${COLS_OFFRE.map(() => '?').join(', ')})`).run(id, ...COLS_OFFRE.map(c => o[c] ?? ''));
+    db.prepare(`INSERT INTO offres (id_offre, ${COLS_FAITS.join(', ')}) VALUES (?, ${COLS_FAITS.map(() => '?').join(', ')})`).run(id, ...COLS_FAITS.map(c => o[c] ?? ''));
+    db.prepare(`INSERT INTO offre_suivis (profil_id, id_offre, ${COLS_SUIVI.join(', ')}) VALUES (profil_actif(), ?, ${COLS_SUIVI.map(() => '?').join(', ')})`).run(id, ...COLS_SUIVI.map(c => o[c] ?? ''));
     journaliser(db, { entite: 'offre', id, libelle: o.titre, action: 'creation' });
   });
   return lireOffre(id);
@@ -1078,8 +1124,10 @@ function creerOffre(b) {
 
 function modifierOffre(id, b) {
   /** @type {any} */
-  const avant = lireOffre(id);
-  if (!avant) throw new ErreurHttp(404, `Offre ${id} introuvable.`);
+  const lue = lireOffre(id);
+  if (!lue) throw new ErreurHttp(404, `Offre ${id} introuvable.`);
+  // NOTE: la catégorie lue est celle vue par le profil ; la table commune garde la sienne, sinon marquer une offre vue la rangerait dans « autre » pour tous les profils
+  const avant = { ...lue, categorie: String(db.prepare('SELECT categorie FROM offres WHERE id_offre = ?').get(id)?.categorie ?? 'autre') };
   const champs = estManuelle(id) ? CHAMPS_OFFRE_MANUELLE : CHAMPS_OFFRE_LIBRES;
   if (typeof b === 'object' && b !== null && !Array.isArray(b)) {
     const interdits = Object.keys(b).filter(k => !(k in champs));
@@ -1093,7 +1141,8 @@ function modifierOffre(id, b) {
   let o = { ...avant, ...reste, epinglee_le: ('ignoree' in b && b.ignoree) ? '' : epinglee_le, ignoree: ('ignoree' in b ? b.ignoree : avant.ignoree) ? 1 : 0, vue: ('vue' in b ? b.vue : avant.vue) ? 1 : 0, expiree: ('expiree' in b ? b.expiree : avant.expiree) ? 1 : 0 };
   if (estManuelle(id)) o = completerOffre(o, 'titre' in b && !('categorie' in b) && b.titre !== avant.titre);
   transaction(() => {
-    db.prepare(`UPDATE offres SET ${COLS_OFFRE.map(c => c + ' = ?').join(', ')} WHERE id_offre = ?`).run(...COLS_OFFRE.map(c => o[c] ?? ''), id);
+    db.prepare(`UPDATE offres SET ${COLS_FAITS.map(c => c + ' = ?').join(', ')} WHERE id_offre = ?`).run(...COLS_FAITS.map(c => o[c] ?? ''), id);
+    db.prepare(`UPDATE offre_suivis SET ${COLS_SUIVI.map(c => c + ' = ?').join(', ')} WHERE profil_id = profil_actif() AND id_offre = ?`).run(...COLS_SUIVI.map(c => o[c] ?? ''), id);
     const changements = differences(avant, o, COLS_OFFRE);
     if (changements.length) journaliser(db, { entite: 'offre', id, libelle: o.titre, action: 'modification', changements });
   });
@@ -1126,12 +1175,11 @@ function supprimerOffre(id) {
   });
 }
 
-// --- Google Agenda (ligne 120) : calendrier choisi dans Admin (kv agenda), événements lus à la demande avec un cache d'une minute ---
+// --- Google Agenda (ligne 120) : calendrier choisi dans Admin (réglage agenda du profil), événements lus à la demande avec un cache d'une minute ---
 const lireChoixAgenda = () => {
-  const r = db.prepare("SELECT valeur FROM kv WHERE cle = 'agenda'").get();
-  return { calendrier_id: '', calendrier_nom: '', ...(r ? JSON.parse(String(r.valeur)) : {}) };
+  return { calendrier_id: '', calendrier_nom: '', ...(lireReglageProfil(db, 'agenda') ?? {}) };
 };
-const etatAgenda = () => ({ ...agenda.etat(), ...lireChoixAgenda() });
+const etatAgenda = () => ({ ...agendaDe().etat(), ...lireChoixAgenda() });
 /** @type {Map<string, { quand: number, evenements: any[] }>} */
 const cacheAgenda = new Map();
 const ORIGINE_LOCALE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
@@ -1151,6 +1199,59 @@ function retourInterface(res, retour, resultat) {
   res.end();
 }
 
+// ANCHOR: profils de l'installation (sélecteur libre, sans mot de passe) : liste, création, renommage, couleur, profil par défaut, suppression avec toutes ses données
+async function routeProfils(req, res, p, m) {
+  const erreur = e => { if (e instanceof ErreurProfil) throw new ErreurHttp(e.message.includes('introuvable') ? 404 : 400, e.message); throw e; };
+  if (p === '/api/profils') {
+    if (m === 'GET') return json(res, 200, { profils: listerProfils(db), actif: profilActif(db) });
+    if (m === 'POST') {
+      const d = await corps(req);
+      try {
+        const n = transaction(() => {
+          const x = /** @type {{ id: string, nom: string }} */ (creerProfil(db, d));
+          journaliser(db, { entite: 'profil', id: x.id, libelle: x.nom, action: 'creation' });
+          return x;
+        });
+        return json(res, 201, n);
+      } catch (e) { return erreur(e); }
+    }
+  } else {
+    const id = decodeURIComponent(p.slice('/api/profils/'.length));
+    if (m === 'PATCH') {
+      try {
+        const d = await corps(req);
+        const { avant, apres } = transaction(() => {
+          const r = modifierProfil(db, id, d, ici);
+          // NOTE: les fichiers (dont le jeton Google) viennent de changer de dossier, les instances en mémoire ne les reliraient pas
+          if (!r.avant.defaut && r.apres?.defaut) agendas.clear();
+          const changements = differences(r.avant, r.apres, ['nom', 'couleur', 'ordre', 'defaut']);
+          if (changements.length) journaliser(db, { entite: 'profil', id, libelle: r.apres?.nom ?? '', action: 'modification', changements });
+          return r;
+        });
+        return json(res, 200, apres ?? avant);
+      } catch (e) { return erreur(e); }
+    }
+    if (m === 'DELETE') {
+      try {
+        const supprime = transaction(() => {
+          const x = /** @type {{ id: string, nom: string }} */ (supprimerProfil(db, id));
+          journaliser(db, { entite: 'profil', id, libelle: x.nom, action: 'suppression' });
+          // NOTE: offres que seul ce profil suivait (dont ses offres saisies à la main) retirées de la table partagée
+          supprimerOrphelines(db);
+          return x;
+        });
+        // NOTE: fichiers du profil (signature, photo, agenda, CV) supprimés avec lui ; jamais data/ (profil par défaut, non supprimable)
+        rmSync(join(ici, 'data', 'profils', supprime.id), { recursive: true, force: true });
+        // NOTE: instance Google Agenda et retours OAuth en attente de ce profil retirés de la mémoire
+        for (const f of agendas.keys()) if (f.includes(join('profils', supprime.id))) agendas.delete(f);
+        for (const [etat, profil] of profilsOAuth) if (profil === supprime.id) profilsOAuth.delete(etat);
+        return json(res, 200, { ok: true });
+      } catch (e) { return erreur(e); }
+    }
+  }
+  return json(res, 405, { erreur: `Méthode ${m} non autorisée sur ${p}.` });
+}
+
 async function routeAgenda(req, res, p, q, m) {
   if (p === '/api/agenda') {
     if (m === 'GET') return json(res, 200, etatAgenda());
@@ -1161,12 +1262,12 @@ async function routeAgenda(req, res, p, q, m) {
       let choix = { calendrier_id: '', calendrier_nom: '' };
       if (d.calendrier_id) {
         let liste;
-        try { liste = await agenda.calendriers(); } catch (e) { return erreurAgenda(res, e); }
+        try { liste = await agendaDe().calendriers(); } catch (e) { return erreurAgenda(res, e); }
         const c = liste.find(x => x.id === d.calendrier_id);
         if (!c) throw new ErreurHttp(400, 'Calendrier introuvable parmi ceux dont vous êtes propriétaire.');
         choix = { calendrier_id: c.id, calendrier_nom: c.nom };
       }
-      db.prepare("INSERT INTO kv (cle, valeur) VALUES ('agenda', ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur").run(JSON.stringify(choix));
+      ecrireReglageProfil(db, 'agenda', choix);
       cacheAgenda.clear();
       return json(res, 200, etatAgenda());
     }
@@ -1175,7 +1276,10 @@ async function routeAgenda(req, res, p, q, m) {
     if (m === 'GET') {
       const retour = q.get('retour') ?? '';
       try {
-        res.writeHead(302, { Location: agenda.urlConnexion({ redirection: `http://127.0.0.1:${PORT}/api/agenda/retour`, retour }), 'Cache-Control': 'no-store' });
+        const url = agendaDe().urlConnexion({ redirection: `http://127.0.0.1:${PORT}/api/agenda/retour`, retour });
+        const state = new URL(url).searchParams.get('state');
+        if (state) profilsOAuth.set(state, profilActif(db));
+        res.writeHead(302, { Location: url, 'Cache-Control': 'no-store' });
         return res.end();
       } catch (e) {
         if (!(e instanceof ErreurSync)) throw e;
@@ -1185,7 +1289,10 @@ async function routeAgenda(req, res, p, q, m) {
   } else if (p === '/api/agenda/retour') {
     if (m === 'GET') {
       try {
-        const { retour } = await agenda.echangerCode({ state: q.get('state'), code: q.get('code'), erreur: q.get('error') });
+        // NOTE: le retour de Google est traité pour le profil qui a demandé la connexion
+        const profil = profilsOAuth.get(q.get('state') ?? '') ?? profilDefaut(db);
+        profilsOAuth.delete(q.get('state') ?? '');
+        const { retour } = await avecProfil(profil, () => agendaDe().echangerCode({ state: q.get('state'), code: q.get('code'), erreur: q.get('error') }));
         cacheAgenda.clear();
         return retourInterface(res, retour, { agenda: 'connecte' });
       } catch (e) {
@@ -1195,13 +1302,13 @@ async function routeAgenda(req, res, p, q, m) {
     }
   } else if (p === '/api/agenda/deconnexion') {
     if (m === 'POST') {
-      const r = await agenda.deconnecter();
+      const r = await agendaDe().deconnecter();
       cacheAgenda.clear();
       return json(res, 200, { ...etatAgenda(), ...r });
     }
   } else if (p === '/api/agenda/calendriers') {
     if (m === 'GET') {
-      try { return json(res, 200, await agenda.calendriers()); } catch (e) { return erreurAgenda(res, e); }
+      try { return json(res, 200, await agendaDe().calendriers()); } catch (e) { return erreurAgenda(res, e); }
     }
   } else if (p === '/api/agenda/evenements') {
     // ANCHOR: ?du&au (AAAA-MM-JJ, défaut aujourd'hui et 14 jours), ?frais=1 ignore le cache d'une minute
@@ -1212,12 +1319,12 @@ async function routeAgenda(req, res, p, q, m) {
       if ((Date.parse(au) - Date.parse(du)) / 86_400_000 > 366) throw new ErreurHttp(400, 'Une année au plus par requête.');
       const { calendrier_id: cal } = lireChoixAgenda();
       if (!cal) return json(res, 409, { erreur: 'Aucun calendrier choisi : en choisir un dans Admin.', code: 'calendrier' });
-      const cle = `${cal}|${du}|${au}`;
+      const cle = `${profilActif(db)}|${cal}|${du}|${au}`;
       const c = cacheAgenda.get(cle);
       try {
         await renvoyerEnAttente();
         if (c && q.get('frais') !== '1' && Date.now() - c.quand < 60_000) return json(res, 200, { du, au, evenements: await fusionnerEvenements(c.evenements, du, au, cal) });
-        const evenements = await agenda.evenements(cal, du, au);
+        const evenements = await agendaDe().evenements(cal, du, au);
         cacheAgenda.set(cle, { quand: Date.now(), evenements });
         return json(res, 200, { du, au, evenements: await fusionnerEvenements(evenements, du, au, cal) });
       } catch (e) { return erreurAgenda(res, e); }
@@ -1238,21 +1345,21 @@ function exigerChampsClient(d) {
 // NOTE: offre et contact ne sont pas vérifiés par la collection (seule la candidature l'est) : liens contrôlés ici
 function verifierLiensRdv(d) {
   if (d.offre_id) verifierOffres([String(d.offre_id)]);
-  if (d.contact_id && !db.prepare('SELECT 1 FROM contacts WHERE id = ?').get(d.contact_id)) throw new ErreurHttp(400, `Contact ${d.contact_id} introuvable.`);
+  if (d.contact_id && !db.prepare('SELECT 1 FROM contacts WHERE profil_id = profil_actif() AND id = ?').get(d.contact_id)) throw new ErreurHttp(400, `Contact ${d.contact_id} introuvable.`);
 }
 function titreParDefaut(d) {
-  const c = d.candidature_id ? db.prepare('SELECT entreprise, poste FROM candidatures WHERE id = ?').get(d.candidature_id) : null;
+  const c = d.candidature_id ? db.prepare('SELECT entreprise, poste FROM candidatures WHERE profil_id = profil_actif() AND id = ?').get(d.candidature_id) : null;
   const o = !c && d.offre_id ? db.prepare('SELECT entreprise, titre FROM offres WHERE id_offre = ?').get(d.offre_id) : null;
   return ['Entretien', c?.entreprise ?? o?.entreprise, c?.poste ?? o?.titre].filter(Boolean).join(', ');
 }
 // NOTE: ce qui part chez Google : la note, puis le contact (fonction, prénom, téléphone). C'est l'agenda de l'utilisateur.
 function descriptionRdv(r) {
-  const k = r.contact_id ? db.prepare('SELECT prenom, nom, fonction, telephone FROM contacts WHERE id = ?').get(r.contact_id) : null;
+  const k = r.contact_id ? db.prepare('SELECT prenom, nom, fonction, telephone FROM contacts WHERE profil_id = profil_actif() AND id = ?').get(r.contact_id) : null;
   const contact = k ? ['Contact : ' + [k.prenom, k.nom].filter(Boolean).join(' '), k.fonction, k.telephone].filter(Boolean).join(', ') : '';
   return [r.note, contact].filter(Boolean).join('\n\n');
 }
-const marquerSynchro = (id, etat) => db.prepare('UPDATE rendez_vous SET synchro = ? WHERE id = ?').run(etat, id);
-const agendaPret = () => Boolean(lireChoixAgenda().calendrier_id && agenda.etat().connecte);
+const marquerSynchro = (id, etat) => db.prepare('UPDATE rendez_vous SET synchro = ? WHERE profil_id = profil_actif() AND id = ?').run(etat, id);
+const agendaPret = () => Boolean(lireChoixAgenda().calendrier_id && agendaDe().etat().connecte);
 
 // ANCHOR: envoi d'un RDV vers le calendrier choisi. Panne réseau ou accès à refaire : reste a_envoyer (nouvel essai à la prochaine lecture des événements), autre refus de Google : erreur
 async function envoyerRdv(id) {
@@ -1263,15 +1370,15 @@ async function envoyerRdv(id) {
   try {
     if (r.google_id) {
       try {
-        await agenda.modifier(cal, r.google_id, corpsEvenement(corpsRdv));
+        await agendaDe().modifier(cal, r.google_id, corpsEvenement(corpsRdv));
       } catch (e) {
         // NOTE: événement supprimé dans Google entre-temps : on le recrée
         if (!(e instanceof ErreurSync && e.code === 'introuvable')) throw e;
-        const nouveau = await agenda.creer(cal, corpsRdv);
+        const nouveau = await agendaDe().creer(cal, corpsRdv);
         db.prepare('UPDATE rendez_vous SET google_id = ? WHERE id = ?').run(nouveau.id, id);
       }
     } else {
-      const nouveau = await agenda.creer(cal, corpsRdv);
+      const nouveau = await agendaDe().creer(cal, corpsRdv);
       db.prepare('UPDATE rendez_vous SET google_id = ? WHERE id = ?').run(nouveau.id, id);
     }
     marquerSynchro(id, 'ok');
@@ -1285,7 +1392,7 @@ async function envoyerRdv(id) {
 
 async function renvoyerEnAttente() {
   if (!agendaPret()) return;
-  for (const r of db.prepare("SELECT id FROM rendez_vous WHERE synchro = 'a_envoyer' ORDER BY debut LIMIT 20").all()) await envoyerRdv(String(r.id));
+  for (const r of db.prepare("SELECT id FROM rendez_vous WHERE profil_id = profil_actif() AND synchro = 'a_envoyer' ORDER BY debut LIMIT 20").all()) await envoyerRdv(String(r.id));
 }
 
 async function creerRdv(d) {
@@ -1308,7 +1415,7 @@ async function modifierRdv(id, d) {
 async function supprimerRdv(id, localSeulement) {
   const r = rendezVous.lire(id);
   if (!r) return false;
-  if (r.google_id && !localSeulement && r.synchro !== 'annule') await agenda.supprimer(lireChoixAgenda().calendrier_id, r.google_id);
+  if (r.google_id && !localSeulement && r.synchro !== 'annule') await agendaDe().supprimer(lireChoixAgenda().calendrier_id, r.google_id);
   cacheAgenda.clear();
   return Boolean(rendezVous.supprimer(id));
 }
@@ -1319,30 +1426,30 @@ async function rattacherEvenement(d) {
   const liens = { offre_id: d.offre_id ?? null, candidature_id: d.candidature_id ?? null, contact_id: d.contact_id ?? null };
   verifierLiensRdv(liens);
   verifierCandidature(liens.candidature_id);
-  if (db.prepare('SELECT 1 FROM rendez_vous WHERE google_id = ?').get(d.google_id)) throw new ErreurHttp(409, 'Cet événement est déjà rattaché.');
+  if (db.prepare('SELECT 1 FROM rendez_vous WHERE profil_id = profil_actif() AND google_id = ?').get(d.google_id)) throw new ErreurHttp(409, 'Cet événement est déjà rattaché.');
   const cal = lireChoixAgenda().calendrier_id;
   if (!cal) throw new ErreurHttp(409, 'Aucun calendrier choisi : en choisir un dans Admin.');
-  const e = await agenda.evenement(cal, d.google_id);
+  const e = await agendaDe().evenement(cal, d.google_id);
   const journee = e.journee;
   const debut = journee ? e.debut.slice(0, 10) + 'T00:00' : heureParis(e.debut);
   const duree = journee ? 1440 : Math.min(1440, Math.max(5, Math.round((Date.parse(e.fin) - Date.parse(e.debut)) / 60_000)));
   const r = rendezVous.creer({
     titre: e.titre, debut, duree, type: e.visio ? 'visio' : 'autre', lieu: e.lieu, lien_visio: /^https?:\/\/\S+$/i.test(e.visio) ? e.visio : '', note: '', ...liens, google_id: e.id, synchro: 'ok',
   });
-  try { await agenda.modifier(cal, e.id, { extendedProperties: { private: { suivi: r.id } } }); } catch (x) { if (!(x instanceof ErreurSync)) throw x; }
+  try { await agendaDe().modifier(cal, e.id, { extendedProperties: { private: { suivi: r.id } } }); } catch (x) { if (!(x instanceof ErreurSync)) throw x; }
   cacheAgenda.clear();
   return r;
 }
 
 // ANCHOR: fusion des événements Google et des RDV locaux. Un événement rattaché (suivi ou google_id) reprend l'heure modifiée dans Google ; un RDV absent de la liste est vérifié un à un (annulé ou déplacé hors de la période)
 async function fusionnerEvenements(evenements, du, au, cal) {
-  const parGoogle = new Map(db.prepare('SELECT * FROM rendez_vous WHERE google_id IS NOT NULL').all().map(r => [String(r.google_id), r]));
-  const parId = new Map(db.prepare('SELECT * FROM rendez_vous').all().map(r => [String(r.id), r]));
+  const parGoogle = new Map(db.prepare('SELECT * FROM rendez_vous WHERE profil_id = profil_actif() AND google_id IS NOT NULL').all().map(r => [String(r.google_id), r]));
+  const parId = new Map(db.prepare('SELECT * FROM rendez_vous WHERE profil_id = profil_actif()').all().map(r => [String(r.id), r]));
   const vus = new Set();
   const majHeure = (r, debut, duree) => {
     if (r.debut === debut && r.duree === duree) return;
     transaction(() => {
-      db.prepare('UPDATE rendez_vous SET debut = ?, duree = ?, synchro = ? WHERE id = ?').run(debut, duree, 'ok', r.id);
+      db.prepare('UPDATE rendez_vous SET debut = ?, duree = ?, synchro = ? WHERE profil_id = profil_actif() AND id = ?').run(debut, duree, 'ok', r.id);
       journaliser(db, { entite: 'rendez_vous', id: String(r.id), libelle: String(r.titre) || 'Rendez-vous', action: 'modification', changements: differences(r, { ...r, debut, duree }, ['debut', 'duree']) });
     });
   };
@@ -1355,10 +1462,10 @@ async function fusionnerEvenements(evenements, du, au, cal) {
     else if (r.synchro !== 'ok') marquerSynchro(r.id, 'ok');
     return { ...e, rdv: String(r.id) };
   });
-  const absents = db.prepare("SELECT * FROM rendez_vous WHERE google_id IS NOT NULL AND synchro = 'ok' AND substr(debut, 1, 10) BETWEEN ? AND ? ORDER BY debut LIMIT 10").all(du, au).filter(r => !vus.has(String(r.id)));
+  const absents = db.prepare("SELECT * FROM rendez_vous WHERE profil_id = profil_actif() AND google_id IS NOT NULL AND synchro = 'ok' AND substr(debut, 1, 10) BETWEEN ? AND ? ORDER BY debut LIMIT 10").all(du, au).filter(r => !vus.has(String(r.id)));
   for (const r of absents) {
     try {
-      const e = await agenda.evenement(cal, String(r.google_id));
+      const e = await agendaDe().evenement(cal, String(r.google_id));
       if (e.statut === 'cancelled') marquerSynchro(r.id, 'annule');
       else if (!e.journee) majHeure(r, heureParis(e.debut), Math.max(5, Math.round((Date.parse(e.fin) - Date.parse(e.debut)) / 60_000)));
     } catch (x) {
@@ -1407,13 +1514,26 @@ function corpsBinaire(req) {
   });
 }
 
+// ANCHOR: profil visé par l'URL : /api/p/<profil>/... pour un profil donné, /api/... pour le profil par défaut (skills, commandes, anciens liens)
+// NOTE: l'URL plutôt qu'un en-tête : les images, les liens PDF et CSV et le retour de Google ne portent pas d'en-tête
 async function api(req, res, url) {
+  const prefixe = /^\/api\/p\/([^/]+)(\/.*)$/.exec(url.pathname);
+  if (!prefixe) return avecProfil(profilDefaut(db), () => routes(req, res, url));
+  const id = decodeURIComponent(prefixe[1]);
+  if (!ID_PROFIL.test(id) || !db.prepare('SELECT 1 FROM profils WHERE id = ?').get(id)) return json(res, 404, { erreur: `Profil ${id.slice(0, 40)} introuvable.`, code: 'profil' });
+  const suite = new URL(url);
+  suite.pathname = '/api' + prefixe[2];
+  return avecProfil(id, () => routes(req, res, suite));
+}
+
+async function routes(req, res, url) {
   const { pathname: p } = url;
   const q = url.searchParams;
   const m = req.method;
   let r;
 
   if (p === '/api/agenda' || p.startsWith('/api/agenda/')) return routeAgenda(req, res, p, q, m);
+  if (p === '/api/profils' || p.startsWith('/api/profils/')) return routeProfils(req, res, p, m);
   if (p === '/api/state') {
     if (m === 'GET') return json(res, 200, lireEtat());
     if (m === 'PUT') { ecrireEtat(await corps(req)); return json(res, 200, { ok: true }); }
@@ -1429,7 +1549,7 @@ async function api(req, res, url) {
     if (m === 'PUT') {
       let reglages;
       try {
-        reglages = validerReglages(await corps(req));
+        reglages = validerReglages(completerReglages(db, await corps(req)));
       } catch (e) {
         if (e instanceof ErreurReglages) throw new ErreurHttp(400, e.message);
         throw e;
@@ -1437,7 +1557,8 @@ async function api(req, res, url) {
       if (q.get('apercu') === '1') return json(res, 200, { retirables: offresRetirables(db, reglages) });
       sauvegardeDuJour(ici, db);
       ecrireReglages(db, reglages);
-      return json(res, 200, { reglages, origine: 'app', retirees: retirerOffres(db, reglages) });
+      const retirees = retirerOffres(db, reglages);
+      return json(res, 200, { reglages, origine: 'app', retirees });
     }
   } else if (p === '/api/trajets') {
     // ANCHOR: points de départ et coût du kilomètre (page Admin), pour distance et coût dans la fiche offre
@@ -1454,7 +1575,7 @@ async function api(req, res, url) {
       return json(res, 200, { trajets, origine: 'app' });
     }
   } else if (p === '/api/entreprises/suivi' || p.startsWith('/api/entreprises/suivi/')) {
-    // ANCHOR: décisions de l'utilisateur sur les entreprises de La Bonne Boite (gardée, écartée, contactée), par SIRET, dans le kv entreprises_suivi
+    // ANCHOR: décisions de l'utilisateur sur les entreprises de La Bonne Boite (gardée, écartée, contactée), par SIRET, dans le réglage entreprises_suivi du profil
     if (p === '/api/entreprises/suivi') {
       if (m === 'GET') return json(res, 200, { suivi: lireSuiviEntreprises(db) });
     } else if (m === 'PUT') {
@@ -1487,7 +1608,7 @@ async function api(req, res, url) {
     // ANCHOR: offres et demandeurs d'emploi par métier dans le département de la zone proche (API Marché du travail), gardés dans le kv marche_cache et rafraîchis une fois par jour ; ?force=1 relance l'appel
     if (m !== 'GET') throw new ErreurHttp(405, 'Méthode non autorisée.');
     try {
-      return json(res, 200, await chargerMarche(db, { force: q.get('force') === '1' }));
+      return json(res, 200, await chargerMarche(db, { force: q.get('force') === '1', departement: departementMarche({ SUIVI_DEPARTEMENT_PROCHE: lireZoneProfil(db).departement_proche }), metiers: metiersDuProfil(db).liste, perso: metiersDuProfil(db).perso }));
     } catch (e) {
       if (!(e instanceof ErreurSync)) throw e;
       return json(res, { config: 503, format: 400 }[e.code] ?? 502, { erreur: e.message, code: e.code });
@@ -1511,8 +1632,64 @@ async function api(req, res, url) {
       return json(res, 200, { plateformes });
     }
   } else if (p === '/api/zone') {
-    // NOTE: zone de distance du score (lib/zone.mjs), lecture seule depuis le .env
-    if (m === 'GET') return json(res, 200, lireZone());
+    // ANCHOR: zone de recherche du profil (lib/zone.mjs) : GET rend les points prêts pour le score et le réglage brut (reglage), PUT l'enregistre et recalcule la zone « proche » des offres suivies
+    if (m === 'GET') { const z = lireZoneProfil(db); return json(res, 200, { ...calculerZone(z), reglage: z }); }
+    if (m === 'PUT') {
+      let zone;
+      try {
+        zone = validerZone(await corps(req));
+      } catch (e) {
+        throw new ErreurHttp(400, e.message);
+      }
+      const avant = lireZoneProfil(db);
+      let proches = 0;
+      transaction(() => {
+        ecrireReglageProfil(db, 'zone', zone);
+        proches = recalculerProches(db, zone);
+        const changements = differences(Object.fromEntries(Object.entries(avant).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v])), Object.fromEntries(Object.entries(zone).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v])), Object.keys(zone));
+        if (changements.length) journaliser(db, { entite: 'zone', libelle: 'Zone de recherche', action: 'modification', changements });
+      });
+      return json(res, 200, { ...calculerZone(zone), reglage: zone, proches_modifiees: proches });
+    }
+  } else if (p === '/api/metiers/apercu') {
+    // ANCHOR: aperçu d'un métier en cours de création (ligne 266) : offres du profil reconnues par ses mots, rien n'est écrit
+    if (m === 'POST') {
+      const d = await corps(req);
+      let def;
+      try { def = validerMetierPerso({ ...d, cle: '' }); } catch (e) { throw new ErreurHttp(400, e.message); }
+      const titres = db.prepare('SELECT o.titre FROM offres o JOIN offre_suivis s ON s.id_offre = o.id_offre AND s.profil_id = profil_actif() WHERE s.ignoree = 0 AND o.expiree = 0 ORDER BY o.date_detection DESC').all().map(r => String(r.titre));
+      const trouves = titres.filter(t => correspondPerso(def, t));
+      return json(res, 200, { total: trouves.length, sur: titres.length, exemples: [...new Set(trouves)].slice(0, 5) });
+    }
+  } else if (p === '/api/metiers') {
+    // ANCHOR: métiers recherchés par le profil (lignes 260 et 266) : GET rend sa liste, ses métiers créés et le catalogue ; PUT enregistre la liste ordonnée (le premier pèse le plus dans le score) et, si fournis, les métiers créés
+    const catalogue = () => CATALOGUE.map(({ cle, libelle, titre, couleur, rome }) => ({ cle, libelle, titre, couleur, rome }));
+    const reponse = ({ metiers, perso }) => ({ metiers, perso, catalogue: catalogue(), max: METIERS_MAX, perso_max: PERSO_MAX, couleurs: COULEURS_METIER });
+    if (m === 'GET') { const perso = lireMetiersPerso(db); return json(res, 200, reponse({ metiers: lireMetiers(db, perso), perso })); }
+    if (m === 'PUT') {
+      const d = await corps(req);
+      if (typeof d !== 'object' || d === null || Array.isArray(d)) throw new ErreurHttp(400, 'Objet JSON attendu : { metiers, perso? }.');
+      const persoAvant = lireMetiersPerso(db);
+      const avant = lireMetiers(db, persoAvant);
+      let ecrit;
+      try {
+        ecrit = transaction(() => {
+          const r = ecrireMetiers(db, d.metiers, d.perso);
+          const libelles = (liste, perso) => liste.map(c => libelleMetier(c, perso)).join(', ');
+          // NOTE: un métier créé est journalisé par son nom et ses mots, la clé ne dit rien à l'utilisateur
+          const decrire = perso => perso.map(x => `${x.libelle} (${x.mots.join(', ')}${x.exclus.length ? ` sauf ${x.exclus.join(', ')}` : ''}${x.rome ? `, ${x.rome}` : ''})`).join(' ; ');
+          const changements = [];
+          if (libelles(r.metiers, r.perso) !== libelles(avant, persoAvant)) changements.push({ champ: 'metiers', avant: libelles(avant, persoAvant), apres: libelles(r.metiers, r.perso) });
+          if (JSON.stringify(r.perso) !== JSON.stringify(persoAvant)) changements.push({ champ: 'metiers_perso', avant: decrire(persoAvant), apres: decrire(r.perso) });
+          if (changements.length) journaliser(db, { entite: 'metiers', libelle: 'Métiers recherchés', action: 'modification', changements });
+          return r;
+        });
+      } catch (e) {
+        if (e instanceof ErreurHttp) throw e;
+        throw new ErreurHttp(400, e.message);
+      }
+      return json(res, 200, reponse(ecrit));
+    }
   } else if (p === '/api/sync') {
     if (m === 'GET') return json(res, 200, etatSync);
     if (m === 'POST') {
@@ -1572,7 +1749,7 @@ async function api(req, res, url) {
     if (m !== 'POST') return json(res, 405, { erreur: 'Méthode non autorisée.' });
     const c = lireCandidature(id);
     if (!c) return json(res, 404, { erreur: `Candidature ${id} introuvable.` });
-    const deja = db.prepare("SELECT 1 FROM journal WHERE entite = 'candidature' AND entite_id = ? AND action = 'consultation' AND jour = ?").get(id, aujourdhui());
+    const deja = db.prepare("SELECT 1 FROM journal WHERE profil_id = profil_actif() AND entite = 'candidature' AND entite_id = ? AND action = 'consultation' AND jour = ?").get(id, aujourdhui());
     if (!deja) journaliser(db, { entite: 'candidature', id, libelle: libelleCandidature(c), action: 'consultation' });
     return json(res, 200, { ok: true, deja: Boolean(deja) });
   } else if ((r = p.match(/^\/api\/candidatures\/([^/]+)$/))) {
@@ -1615,10 +1792,10 @@ async function api(req, res, url) {
     if (m === 'GET') return json(res, 200, listerVersions());
   } else if ((r = p.match(/^\/api\/cv\/versions\/([^/]+)(\/pdf)?$/))) {
     const id = decodeURIComponent(r[1]);
-    const v = db.prepare('SELECT * FROM cv_versions WHERE id = ?').get(id);
+    const v = db.prepare('SELECT * FROM cv_versions WHERE profil_id = profil_actif() AND id = ?').get(id);
     if (!v) return json(res, 404, { erreur: `Version de CV ${id} introuvable.` });
     // NOTE: le PDF d'une version est refait depuis son instantané, identique à celui envoyé
-    if (r[2] && m === 'GET') return envoyerFichier(res, String(v.nom), 'pdf', await cvPdf(JSON.parse(String(v.contenu)).document, { photo: lirePhoto(DOSSIER_DONNEES) }));
+    if (r[2] && m === 'GET') return envoyerFichier(res, String(v.nom), 'pdf', await cvPdf(JSON.parse(String(v.contenu)).document, { photo: lirePhoto(dossierDonnees()) }));
     if (!r[2] && m === 'GET') return json(res, 200, { ...versionFront(v), ...JSON.parse(String(v.contenu)) });
     if (!r[2] && m === 'DELETE') {
       supprimerVersion('cv_versions', 'cv', v);
@@ -1644,9 +1821,9 @@ async function api(req, res, url) {
       return json(res, 200, preparerLettre(d.offre_id));
     }
   } else if ((r = p.match(/^\/api\/lettre\/preparer\/([^/]+)$/))) {
-    if (m === 'GET') return json(res, 200, preparations.get(decodeURIComponent(r[1])) ?? { etat: null });
+    if (m === 'GET') return json(res, 200, preparations.get(clePreparation(decodeURIComponent(r[1]))) ?? { etat: null });
   } else if (p === '/api/lettre/matrice') {
-    // ANCHOR: matrice par défaut de l'utilisateur (kv lettre_matrice), reprise pour chaque nouvelle lettre
+    // ANCHOR: matrice par défaut de l'utilisateur (réglage lettre_matrice du profil), reprise pour chaque nouvelle lettre
     if (m === 'GET') return json(res, 200, lireMatriceLettre());
     if (m === 'PUT') {
       const avant = lireMatriceLettre();
@@ -1654,13 +1831,13 @@ async function api(req, res, url) {
       // NOTE: comparaison du JSON entier : le journal tronque à 300 caractères, une consigne de bloc modifiée au-delà aurait passé pour « sans changement »
       const changements = JSON.stringify(avant) === JSON.stringify(n) ? [] : [{ champ: 'matrice', avant: `${avant.ton}, ${avant.mots} mots`, apres: `${n.ton}, ${n.mots} mots (consignes ou blocs modifiés)` }];
       if (changements.length) transaction(() => {
-        db.prepare("INSERT INTO kv (cle, valeur) VALUES ('lettre_matrice', ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur").run(JSON.stringify(n));
+        ecrireReglageProfil(db, 'lettre_matrice', n);
         journaliser(db, { entite: 'profil', id: 'lettre_matrice', libelle: 'Matrice de lettre', action: 'modification', changements });
       });
       return json(res, 200, n);
     }
   } else if (p === '/api/lettre/style') {
-    // ANCHOR: bibliothèque de style (kv lettre_style) : angles d'accroche par métier et formules à éviter, lus par Qwen, par Claude et par le contrôle
+    // ANCHOR: bibliothèque de style (réglage lettre_style du profil) : angles d'accroche par métier et formules à éviter, lus par Qwen, par Claude et par le contrôle
     if (m === 'GET') return json(res, 200, lireStyleLettre());
     if (m === 'PUT') {
       const avant = lireStyleLettre();
@@ -1669,7 +1846,7 @@ async function api(req, res, url) {
       const resume = st => `${st.angles.length} angles (${st.angles.map(a => a.nom).join(', ')}), ${st.eviter.length} formules à éviter`;
       const changements = JSON.stringify(avant) === JSON.stringify(n) ? [] : [{ champ: 'style', avant: resume(avant), apres: resume(n) }];
       if (changements.length) transaction(() => {
-        db.prepare("INSERT INTO kv (cle, valeur) VALUES ('lettre_style', ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur").run(JSON.stringify(n));
+        ecrireReglageProfil(db, 'lettre_style', n);
         journaliser(db, { entite: 'profil', id: 'lettre_style', libelle: 'Style de lettre', action: 'modification', changements });
       });
       return json(res, 200, n);
@@ -1677,7 +1854,7 @@ async function api(req, res, url) {
   } else if ((r = p.match(/^\/api\/lettre\/brouillons\/([^/]+)$/))) {
     const cle = decodeURIComponent(r[1]);
     if (m === 'GET') {
-      const b = db.prepare('SELECT * FROM lettre_brouillons WHERE cle = ?').get(cle);
+      const b = db.prepare('SELECT * FROM lettre_brouillons WHERE profil_id = profil_actif() AND cle = ?').get(cle);
       if (b) return json(res, 200, brouillonFront(b));
       cibleLettre(cle);
       return json(res, 200, null);
@@ -1700,13 +1877,13 @@ async function api(req, res, url) {
   } else if ((r = p.match(/^\/api\/lettre\/versions\/([^/]+?)(\/pdf|\/docx)?$/))) {
     const id = decodeURIComponent(r[1]);
     /** @type {any} */
-    const v = db.prepare('SELECT * FROM lettre_versions WHERE id = ?').get(id);
+    const v = db.prepare('SELECT * FROM lettre_versions WHERE profil_id = profil_actif() AND id = ?').get(id);
     if (!v) return json(res, 404, { erreur: `Version de lettre ${id} introuvable.` });
     const contenu = lireJson(v.contenu, {});
     // NOTE: le fichier d'une version est refait depuis son instantané, avec la signature du moment
     if (r[2] && m === 'GET') {
       const format = r[2].slice(1);
-      const signature = lireSignature(DOSSIER_DONNEES);
+      const signature = lireSignature(dossierDonnees());
       return envoyerFichier(res, String(v.nom), format, format === 'docx' ? lettreDocx(contenu.lettre, { signature }) : await lettrePdf(contenu.lettre, { signature }));
     }
     if (!r[2] && m === 'GET') return json(res, 200, { ...lettreVersionFront(v), ...contenu });
@@ -1717,7 +1894,7 @@ async function api(req, res, url) {
   } else if (p === '/api/signature') {
     // ANCHOR: signature des lettres (data/signature.png ou .jpg, jamais versionnée) : GET renvoie l'image (404 sans signature), POST reçoit l'image telle quelle
     if (m === 'GET') {
-      const s = lireSignature(DOSSIER_DONNEES);
+      const s = lireSignature(dossierDonnees());
       if (!s) return json(res, 404, { erreur: 'Aucune signature enregistrée.' });
       res.writeHead(200, { 'Content-Type': s.type === 'PNG' ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       return res.end(s.octets);
@@ -1725,7 +1902,7 @@ async function api(req, res, url) {
     if (m === 'POST') {
       let infos;
       try {
-        infos = enregistrerSignature(DOSSIER_DONNEES, await corpsBinaire(req));
+        infos = enregistrerSignature(dossierDonnees(), await corpsBinaire(req));
       } catch (e) {
         if (e instanceof ErreurHttp) throw e;
         throw new ErreurHttp(400, String(e.message ?? e));
@@ -1734,14 +1911,14 @@ async function api(req, res, url) {
       return json(res, 201, infos);
     }
     if (m === 'DELETE') {
-      supprimerSignature(DOSSIER_DONNEES);
+      supprimerSignature(dossierDonnees());
       journaliser(db, { entite: 'signature', id: 'signature', libelle: 'Signature', action: 'suppression' });
       return json(res, 200, { ok: true });
     }
   } else if (p === '/api/photo') {
     // ANCHOR: photo de profil (data/photo.png ou .jpg, jamais versionnée) : GET renvoie l'image (404 sans photo), POST reçoit l'image telle quelle
     if (m === 'GET') {
-      const ph = lirePhoto(DOSSIER_DONNEES);
+      const ph = lirePhoto(dossierDonnees());
       if (!ph) return json(res, 404, { erreur: 'Aucune photo enregistrée.' });
       res.writeHead(200, { 'Content-Type': ph.type === 'PNG' ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       return res.end(ph.octets);
@@ -1749,7 +1926,7 @@ async function api(req, res, url) {
     if (m === 'POST') {
       let infos;
       try {
-        infos = enregistrerPhoto(DOSSIER_DONNEES, await corpsBinaire(req));
+        infos = enregistrerPhoto(dossierDonnees(), await corpsBinaire(req));
       } catch (e) {
         if (e instanceof ErreurHttp) throw e;
         throw new ErreurHttp(400, String(e.message ?? e));
@@ -1758,7 +1935,7 @@ async function api(req, res, url) {
       return json(res, 201, infos);
     }
     if (m === 'DELETE') {
-      supprimerPhoto(DOSSIER_DONNEES);
+      supprimerPhoto(dossierDonnees());
       journaliser(db, { entite: 'photo', id: 'photo', libelle: 'Photo de profil', action: 'suppression' });
       return json(res, 200, { ok: true });
     }
@@ -1829,9 +2006,10 @@ async function api(req, res, url) {
   } else if ((r = p.match(/^\/api\/candidatures\/([^/]+)\/competences-offre$/))) {
     // NOTE: lecture seule, les compétences relevées dans l'annonce restent consultables après la purge de l'offre
     const id = decodeURIComponent(r[1]);
-    if (!db.prepare('SELECT 1 FROM candidatures WHERE id = ?').get(id)) return json(res, 404, { erreur: `Candidature ${id} introuvable.` });
+    if (!db.prepare('SELECT 1 FROM candidatures WHERE profil_id = profil_actif() AND id = ?').get(id)) return json(res, 404, { erreur: `Candidature ${id} introuvable.` });
     if (m === 'GET') {
-      const ligne = db.prepare('SELECT id_offre FROM offre_competences WHERE candidature_id = ?').get(id);
+      // NOTE: table commune aux profils, où candidature_id ne garde que le premier lien : on passe par l'offre de la candidature, propre à chaque profil
+      const ligne = db.prepare('SELECT id_offre FROM offre_competences WHERE candidature_id = ? OR id_offre = (SELECT offre_id FROM candidatures WHERE id = ?)').get(id, id);
       return json(res, 200, ligne ? etatCompetencesOffre(ligne.id_offre) : { extrait: false, items: [] });
     }
   } else if (p === '/api/competences-ignorees') {
@@ -1841,7 +2019,7 @@ async function api(req, res, url) {
       const valeur = norm(String(d.valeur ?? '').trim());
       if (!valeur) throw new ErreurHttp(400, 'valeur : texte attendu.');
       const liste = [...new Set([...ignoreesCompetences(), valeur])];
-      db.prepare("INSERT INTO kv (cle, valeur) VALUES ('competences_ignorees', ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur").run(JSON.stringify(liste));
+      ecrireReglageProfil(db, 'competences_ignorees', liste);
       journaliser(db, { entite: 'competence_ignoree', id: valeur, libelle: valeur, action: 'creation' });
       return json(res, 201, { ok: true, ignorees: liste.length });
     }
@@ -1894,7 +2072,7 @@ createServer(async (req, res) => {
   console.log(`Suivi emploi : http://localhost:${PORT}`);
   // ANCHOR: épingles échues remises à zéro au démarrage puis toutes les six heures, avec une trace au journal
   const purgerEpingles = () => {
-    for (const o of expirerEpingles(db)) journaliser(db, { entite: 'offre', id: o.id_offre, libelle: o.titre, action: 'modification', changements: [{ champ: 'epinglee_le', avant: o.epinglee_le, apres: '' }] });
+    for (const o of expirerEpingles(db)) avecProfil(o.profil_id, () => journaliser(db, { entite: 'offre', id: o.id_offre, libelle: o.titre, action: 'modification', changements: [{ champ: 'epinglee_le', avant: o.epinglee_le, apres: '' }], auteur: 'systeme' }));
   };
   purgerEpingles();
   setInterval(purgerEpingles, 6 * 3600 * 1000).unref();

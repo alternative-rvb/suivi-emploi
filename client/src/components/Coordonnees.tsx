@@ -2,6 +2,7 @@ import { Camera, PenLine, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { separerLieu } from '../../../lib/coordonnees.mjs';
 import { envoyerPhoto, envoyerSignature, supprimerPhoto, supprimerSignature } from '../api.ts';
+import { urlApi } from '../profil.ts';
 import { definirPhoto, usePhoto } from '../usePhoto.ts';
 // ANCHOR: coordonnées de l'entête du CV (kv profil, champ contact), saisies dans Profil > Coordonnées ou directement dans l'aperçu du CV
 export const CONTACT: [string, string, string][] = [
@@ -66,7 +67,7 @@ function Signature({ initiale }) {
     <div className="coord-signature">
       <h4 className="small"><PenLine size={14} /> Signature des lettres</h4>
       <p className="muted small">Image PNG ou JPEG (500 Ko au plus), gardée dans data/ et jamais versionnée. Sans image, la lettre se termine par votre nom.</p>
-      {presente && <img className="lettre-signature-apercu" src={`/api/signature?v=${version}`} alt="Signature enregistrée" />}
+      {presente && <img className="lettre-signature-apercu" src={urlApi(`/api/signature?v=${version}`)} alt="Signature enregistrée" />}
       <div className="cv-actions">
         <label className="btn btn-ghost small cv-fichier"><Upload size={15} />{presente ? 'Remplacer' : 'Envoyer l\'image'}
           <input type="file" accept="image/png,image/jpeg" onChange={e => { envoyer(e.target.files?.[0]); e.target.value = ''; }} />

@@ -22,6 +22,7 @@ import { compterNonVues } from './comptage.ts';
 import { ACTIFS } from './constants.ts';
 import { RendezVousProvider } from './rendezVous.tsx';
 import PiedDePage from './components/PiedDePage.tsx';
+import ProfilsMenu from './components/ProfilsMenu.tsx';
 import { useOffres } from './useOffres.ts';
 import { useMemoire } from './utils.ts';
 import { useProgression } from './useProgression.ts';
@@ -233,6 +234,15 @@ export default function App() {
     }
   }, []);
 
+  // ANCHOR: avant de changer de profil (ligne 263) : les modifications en attente partent vers le profil ouvert ; faux si elles restent en échec
+  const avantChangement = useCallback(async () => {
+    while (enVol.current) await new Promise(r => setTimeout(r, 100));
+    if (minuteur.current || echec.current) await enregistrer();
+    // NOTE: laisse React rendre l'état « Enregistré », sinon l'alerte de départ (beforeunload) se déclenche au rechargement
+    await new Promise(r => setTimeout(r, 50));
+    return !echec.current;
+  }, [enregistrer]);
+
   // ANCHOR: rendez-vous (ligne 121) : mis à jour après chaque appel à l'API, sans passer par l'envoi par différence (le serveur seul écrit google_id et synchro)
   const majRdv = useCallback((f: (l: any[]) => any[]) => {
     setEtat(e => {
@@ -296,8 +306,10 @@ export default function App() {
   const ouvrirLettre = (cible: { offre_id?: string; candidature_id?: string }) => { setLettreCible(cible); setVuesOuvertes(o => ({ ...o, lettre: true })); setVueCv('lettre'); setOnglet('cv'); window.scrollTo(0, 0); };
   const [libelle, classe] = SAUVEGARDE[sauvegarde];
 
+  // NOTE: l'onglet Profil porte le prénom (premier mot du « Nom affiché » des coordonnées), « Profil » tant qu'il n'est pas renseigné
+  const prenom = String(etat?.profil?.contact?.nom ?? '').trim().split(/\s+/)[0] ?? '';
   const rendreOnglet = ([k, l, Ico]) => (
-      <button key={k} type="button" role="tab" aria-selected={onglet === k} className={'tab' + (onglet === k ? ' on' : '')} onClick={() => setOnglet(k)}>{k === 'profil' && photo.presente ? <AvatarProfil url={photo.url} Icone={Ico} /> : <Ico size={15} aria-hidden="true" />}{l}{k === 'offres' && nonVues > 0 && <span className="count tab-count" aria-label={`${nonVues} offres non vues`}>{nonVues}</span>}{k === 'cand' && actives > 0 && <span className="count tab-count" aria-label={`${actives} candidatures actives`}>{actives}</span>}{k === 'contacts' && nbContacts > 0 && <span className="count tab-count" aria-label={`${nbContacts} contacts`}>{nbContacts}</span>}{k === 'agenda' && rdvAVenir > 0 && <span className="count tab-count" aria-label={`${rdvAVenir} rendez-vous à venir`}>{rdvAVenir}</span>}</button>
+      <button key={k} type="button" role="tab" aria-selected={onglet === k} className={'tab' + (onglet === k ? ' on' : '') + (k === 'admin' ? ' tab-admin' : '')} onClick={() => setOnglet(k)} {...(k === 'profil' && prenom ? { 'aria-label': `Profil de ${prenom}`, title: 'Profil' } : k === 'admin' ? { 'aria-label': l, title: l } : {})}>{k === 'profil' && photo.presente ? <AvatarProfil url={photo.url} Icone={Ico} /> : <Ico size={15} aria-hidden="true" />}{k === 'profil' && prenom ? <span className="tab-prenom">{prenom}</span> : k === 'admin' ? <span className="tab-libelle">{l}</span> : l}{k === 'offres' && nonVues > 0 && <span className="count tab-count" aria-label={`${nonVues} offres non vues`}>{nonVues}</span>}{k === 'cand' && actives > 0 && <span className="count tab-count" aria-label={`${actives} candidatures actives`}>{actives}</span>}{k === 'contacts' && nbContacts > 0 && <span className="count tab-count" aria-label={`${nbContacts} contacts`}>{nbContacts}</span>}{k === 'agenda' && rdvAVenir > 0 && <span className="count tab-count" aria-label={`${rdvAVenir} rendez-vous à venir`}>{rdvAVenir}</span>}</button>
   );
   return (
     <RendezVousProvider rdvs={etat.rendez_vous ?? []} majRdv={majRdv} candidatures={etat.candidatures} contacts={etat.contacts} offres={lesOffres.offres} maj={maj}>
@@ -314,6 +326,7 @@ export default function App() {
             {ONGLETS.filter(([k]) => !REGLAGES.includes(k)).map(rendreOnglet)}
           </nav>
           <div className="topbar-end">
+          <ProfilsMenu avantChangement={avantChangement} />
           <nav className="tabs tabs-reglages" role="tablist" aria-label="Profil et administration">
             {ONGLETS.filter(([k]) => REGLAGES.includes(k)).map(rendreOnglet)}
           </nav>

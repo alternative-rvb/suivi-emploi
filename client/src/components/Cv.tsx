@@ -12,7 +12,9 @@ import VersionsListe from './VersionsListe.tsx';
 import { contactManquant, majContact } from './Coordonnees.tsx';
 import Select from './Select.tsx';
 import ChoixRecherche from './ChoixRecherche.tsx';
-import { METIERS_CV as METIERS, TITRES_METIER, villeMission } from '../../../lib/cv.mjs';
+import { metierDe } from '../../../lib/metiers.mjs';
+import { TITRES_METIER, villeMission } from '../../../lib/cv.mjs';
+import { metiersPerso, useMetiers } from '../metiers.ts';
 
 const STATUTS = { ok: ['Conforme', 'ok'], partiel: ['Partiel', 'partiel'], profil: ['Absent du CV de référence, présent au Profil', 'profil'], absent: ['Absent du CV de référence', 'absent'] };
 
@@ -55,6 +57,7 @@ const ACTIONS = {
 // ANCHOR: dernière cible du CV, gardée hors du composant : quitter l'onglet CV et lettre démonte la vue, le retour reprend le même aperçu
 const memoire = { cible: 'general', actif: 'generique' as 'generique' | 'sur_mesure', baseSM: 'general', offreId: '', candidatureId: '', assemblage: null as any };
 export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerPartie }) {
+  const { affiches: metiers } = useMetiers();
   const [cible, setCible] = useState(memoire.cible);
   // NOTE: un seul aperçu à droite, piloté par la dernière carte touchée (génériques ou sur mesure) ; le sur mesure part d'une offre, sinon d'une base générale ou métier
   const [actif, setActif] = useState<'generique' | 'sur_mesure'>(demande ? 'generique' : memoire.actif);
@@ -192,7 +195,7 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
     const d = document.querySelector<HTMLDetailsElement>('#cv-ref details');
     if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   };
-  const optionsCible = [['general', 'Général'], ...METIERS.map(m => [m, CATEGORIES[m].label])];
+  const optionsCible = [['general', 'Général'], ...metiers.map(m => [m, CATEGORIES[m].label])];
   // NOTE: le numéro de l'offre fait partie du libellé (donc de la recherche) ; une offre absente de la liste (purgée, pas encore chargée) reste affichée grâce à sa candidature
   const optionsOffres = useMemo(() => {
     const libelle = o => [o.titre, o.entreprise].filter(Boolean).join(' · ') + (String(o.id_offre).startsWith('man-') ? '' : ` · n°${o.id_offre}`);
@@ -208,7 +211,7 @@ export default function Cv({ etat, maj, offres, cible: demande, cibleLue, allerP
   const doc = resultat?.document;
   // NOTE: titre sous le nom propre à la cible (profil.titres), repli sur celui des coordonnées ; lu localement pour suivre la saisie sans attendre la recomposition
   const cleTitre = doc?.categorie || 'general';
-  const defautTitre = TITRES_METIER[cleTitre] || contact.titre || '';
+  const defautTitre = (TITRES_METIER[cleTitre] ?? metierDe(cleTitre, metiersPerso())?.titre) || contact.titre || '';
   const titreCible = profil.titres?.[cleTitre] || defautTitre;
   const controle = resultat?.controle;
   const aVerifier = controle?.faits.filter(f => f.statut !== 'ok') ?? [];

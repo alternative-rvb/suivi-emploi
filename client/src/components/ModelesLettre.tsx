@@ -4,17 +4,20 @@ import { enregistrerStyle } from '../api.ts';
 import { useMemoire } from '../utils.ts';
 import MatriceLettreDefaut from './MatriceLettreDefaut.tsx';
 import Select from './Select.tsx';
-import { BLOCS_LETTRE, CLICHES, HUMILITE, LIBELLES_BLOC, LIBELLES_METIER, METIERS_LETTRE, STYLE_DEFAUT } from '../../../lib/lettre.mjs';
+import { BLOCS_LETTRE, CLICHES, HUMILITE, LIBELLES_BLOC, STYLE_DEFAUT } from '../../../lib/lettre.mjs';
 import type { LettreMatrice, LettreStyle, MetierLettre } from '../../../types';
+import { useMetiers } from '../metiers.ts';
+import { CATEGORIES } from '../constants.ts';
 
 const TONS = { sobre: 'Sobre', chaleureux: 'Chaleureux', dynamique: 'Dynamique' };
 const copie = (s: LettreStyle | undefined): LettreStyle => structuredClone(s ?? STYLE_DEFAUT) as LettreStyle;
 // NOTE: un angle sans métier précisé vaut pour tous ; activer le dernier métier manquant ramène à « tous »
 const actifPour = (a: LettreStyle['angles'][number], m: MetierLettre) => !a.metiers.length || a.metiers.includes(m);
-const metiersApres = (a: LettreStyle['angles'][number], m: MetierLettre, actif: boolean): MetierLettre[] => {
-  const base: MetierLettre[] = a.metiers.length ? a.metiers : [...METIERS_LETTRE];
+// NOTE: tous = métiers proposés au profil (catalogue ou métiers créés) : un angle actif pour chacun redevient « tous »
+const metiersApres = (a: LettreStyle['angles'][number], m: MetierLettre, actif: boolean, tous: MetierLettre[]): MetierLettre[] => {
+  const base: MetierLettre[] = a.metiers.length ? a.metiers : [...tous];
   const n = actif ? [...new Set([...base, m])] : base.filter(x => x !== m);
-  return n.length === METIERS_LETTRE.length ? [] : n;
+  return tous.every(x => n.includes(x)) ? [] : n;
 };
 
 // ANCHOR: aperçu à gauche : une lettre schématique avec les trois zones réglables numérotées directement dessus, la zone de l'étape active en couleur, les autres en gris ; un clic sur une zone ouvre l'étape
@@ -65,7 +68,10 @@ function Etape({ actif, ouverte, bascule, n, titre, resume, children }: { actif:
 // ANCHOR: Profil > Modèles CV et lettre > Lettre : un métier à la fois (liste déroulante), puis trois étapes dont une seule est ouverte (ton et longueur, angles d'accroche, formules à éviter)
 // NOTE: la matrice et les formules à éviter valent pour tous les métiers ; seuls les angles se choisissent par métier
 export default function ModelesLettre({ matrice, style: enregistre }: { matrice?: LettreMatrice; style?: LettreStyle }) {
-  const [metier, setMetier] = useMemoire('lettre.metier', 'formateur_digital') as [MetierLettre, (m: MetierLettre) => void];
+  const [choisi, setMetier] = useMemoire('lettre.metier', '') as [MetierLettre, (m: MetierLettre) => void];
+  // NOTE: métiers du profil ; un choix mémorisé hors de sa liste est remplacé par le premier
+  const { affiches: metiers } = useMetiers();
+  const metier = metiers.includes(choisi) ? choisi : metiers[0];
   const [ouvertes, setOuvertes] = useMemoire('lettre.etapes2', [1]) as [number[], (o: number[]) => void];
   const [etape, setEtape] = useMemoire('lettre.etape2', 1) as [number, (n: number) => void];
   const bascule = (n: number, ouvert: boolean) => {
@@ -108,7 +114,7 @@ export default function ModelesLettre({ matrice, style: enregistre }: { matrice?
     <div className="modeles-lettre-grille">
     <ApercuLettre etape={vue} matrice={matrice} angle={style.angles.find(a => a.id === editee)} ouvrir={n => bascule(n, true)} />
     <section className="carte modeles-lettre" aria-label="Style des lettres">
-      <label className="field">Métier visé<Select value={metier} onChange={e => setMetier(e.target.value)} options={METIERS_LETTRE.map(m => [m, LIBELLES_METIER[m]])} /></label>
+      <label className="field">Métier visé<Select value={metier} onChange={e => setMetier(e.target.value)} options={metiers.map(m => [m, CATEGORIES[m]?.label ?? m])} /></label>
       <p className="muted small">Les lettres du métier choisi piochent dans ces angles d'accroche. Le ton, la longueur et les formules à éviter valent pour tous les métiers.</p>
 
       <MatriceLettreDefaut matrice={matrice} integre rendre={({ ton, plan, bouton: enreg }) => (
@@ -125,13 +131,13 @@ export default function ModelesLettre({ matrice, style: enregistre }: { matrice?
         </>
       )} />
 
-      <Etape actif={vue === 3} ouverte={ouvertes.includes(3)} bascule={bascule} n={3} titre="Angles d'accroche" resume={`${actifs} sur ${style.angles.length} pour ${LIBELLES_METIER[metier]}`}>
+      <Etape actif={vue === 3} ouverte={ouvertes.includes(3)} bascule={bascule} n={3} titre="Angles d'accroche" resume={`${actifs} sur ${style.angles.length} pour ${(CATEGORIES[metier]?.label ?? metier)}`}>
         <p className="muted small">Un angle est une façon d'ouvrir la lettre. Le modèle en choisit un selon l'annonce, et le contrôle signale une ouverture déjà utilisée. Cliquez sur un angle pour le modifier.</p>
         <ul className="angles-liste">
           {style.angles.map(a => (
             <li key={a.id} className="angle-ligne">
               <div className="angle-tete">
-                <label className="switch"><input type="checkbox" checked={actifPour(a, metier)} aria-label={`Angle ${a.nom} actif pour ${LIBELLES_METIER[metier]}`} onChange={e => maj(s => { const x = s.angles.find(y => y.id === a.id); if (x) x.metiers = metiersApres(x, metier, e.target.checked); })} /></label>
+                <label className="switch"><input type="checkbox" checked={actifPour(a, metier)} aria-label={`Angle ${a.nom} actif pour ${(CATEGORIES[metier]?.label ?? metier)}`} onChange={e => maj(s => { const x = s.angles.find(y => y.id === a.id); if (x) x.metiers = metiersApres(x, metier, e.target.checked, metiers); })} /></label>
                 <button type="button" className="angle-nom" aria-expanded={editee === a.id} onClick={() => setEditee(editee === a.id ? '' : a.id)}>
                   <strong>{a.nom}</strong>
                   {editee !== a.id && <span className="muted small angle-extrait">{a.consigne}</span>}

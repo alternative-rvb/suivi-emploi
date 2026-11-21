@@ -1,5 +1,6 @@
 // Tests du CV composé : composition, contrôle contre la référence, secours et routes (données fictives, sans réseau)
 import test from 'node:test';
+import { brancherProfils } from '../lib/profils.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -175,6 +176,7 @@ test('migration v8 : tables cv_references et cv_versions créées sur une base v
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const brute = new DatabaseSync(chemin);
+    brancherProfils(brute);
     brute.exec('DROP TABLE cv_references; DROP TABLE cv_versions; PRAGMA user_version = 7');
     brute.close();
     const db = ouvrirBase(chemin);
@@ -237,7 +239,9 @@ test('routes du CV : référence (PDF, refus et secours), composition sans écri
 
     // NOTE: choix du modèle (métier, prioritaires) validés côté serveur : offre ajoutée dans la base du serveur de test
     const base = new DatabaseSync(join(dir, 'suivi.db'));
+    brancherProfils(base);
     base.prepare("INSERT INTO offres (id_offre, titre, categorie, departement, date_detection, annonce) VALUES ('o9', 'Comptable', 'comptabilite', '83', date('now'), 'Poste de comptable.')").run();
+    base.prepare("INSERT INTO offre_suivis (id_offre) VALUES ('o9')").run();
     base.close();
     assert.equal((await appel('POST', '/api/cv/composer', { cible: 'offre', offre_id: 'o9', metier: 'inconnu' })).status, 400);
     assert.equal((await appel('POST', '/api/cv/composer', { cible: 'offre', offre_id: 'o9', prioritaires: 'c1' })).status, 400);

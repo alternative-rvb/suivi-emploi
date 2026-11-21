@@ -138,19 +138,20 @@ export default function Formations({ formations, competences = [], experiences =
       <h2 id={`titre-formations-${genre}`} className="panel-title">{g.titre}</h2>
       <p className="muted small lead">{g.aide} Les champs sont modifiables directement et l'enregistrement est automatique.</p>
       <div className="table-wrap">
-        <table className="table">
+        {/* NOTE: chaque ligne s'affiche en fiche (intitulé en tête, champs libellés par data-label, une colonne par champ, remarques sur toute la largeur), le tableau large débordait de la colonne du Profil */}
+        <table className="table table-fiches" style={{ '--fiche-cols': g.colonnes.length - 1 + (g.types ? 1 : 0) } as any}>
           <thead><tr><th>Intitulé</th>{g.types && <th>Type</th>}{g.colonnes.map(([, l]) => <th key={l}>{l}</th>)}{g.matieres && <th>Compétences enseignées</th>}<th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {lignes.length === 0 && <tr><td colSpan={g.colonnes.length + (g.types ? 3 : 2) + (g.matieres ? 1 : 0)}>{g.vide}</td></tr>}
             {lignes.map(t => (
               <tr key={t.id}>
-                <td className="strong">{t.titre}</td>
-                {g.types && <td><Select className="select-sm" value={t.type} onChange={e => modifier(t.id, 'type', e.target.value)} options={g.types} aria-label={`Type ${t.titre}`} /></td>}
-                {g.colonnes.map(([cle, l]) => cle === g.multiple ? <td key={cle}><Organismes t={t} options={organismes} modifier={modifier} /></td> : cle === 'periode' ? <td key={cle}><Periode t={t} modifier={modifier} /></td> : (
-                  <td key={cle}><input className="input cell" value={t[cle] ?? ''} onChange={e => modifier(t.id, cle, e.target.value)} aria-label={`${l} ${t.titre}`} /></td>
+                <td className="strong fiche-titre">{t.titre}</td>
+                {g.types && <td data-label="Type"><Select className="select-sm" value={t.type} onChange={e => modifier(t.id, 'type', e.target.value)} options={g.types} aria-label={`Type ${t.titre}`} /></td>}
+                {g.colonnes.map(([cle, l]) => cle === g.multiple ? <td key={cle} data-label={l}><Organismes t={t} options={organismes} modifier={modifier} /></td> : cle === 'periode' ? <td key={cle} data-label={l}><Periode t={t} modifier={modifier} /></td> : (
+                  <td key={cle} className={cle === 'note' ? 'fiche-large' : undefined} data-label={l}><input className="input cell" value={t[cle] ?? ''} onChange={e => modifier(t.id, cle, e.target.value)} aria-label={`${l} ${t.titre}`} /></td>
                 ))}
-                {g.matieres && <td><Matieres t={t} competences={competences} modifier={modifier} /></td>}
-                <td><button type="button" className="btn btn-ghost small icon" onClick={() => supprimer(t.id)} aria-label={`Supprimer ${t.titre}`} title="Supprimer cette ligne"><Trash2 size={15} /></button></td>
+                {g.matieres && <td className="fiche-large" data-label="Compétences enseignées"><Matieres t={t} competences={competences} modifier={modifier} /></td>}
+                <td className="fiche-actions"><button type="button" className="btn btn-ghost small icon" onClick={() => supprimer(t.id)} aria-label={`Supprimer ${t.titre}`} title="Supprimer cette ligne"><Trash2 size={15} /></button></td>
               </tr>
             ))}
           </tbody>

@@ -1,6 +1,5 @@
 import BilanPeriodes from './BilanPeriodes.tsx';
 import Badges from './Badges.tsx';
-import CarteZone from './CarteZone.tsx';
 import Competences from './Competences.tsx';
 import Coordonnees from './Coordonnees.tsx';
 import Formations from './Formations.tsx';
@@ -15,6 +14,7 @@ import ReglagesRecherche from './ReglagesRecherche.tsx';
 import Select from './Select.tsx';
 import ToutReplier from './ToutReplier.tsx';
 import Trajets from './Trajets.tsx';
+import ZoneRecherche from './ZoneRecherche.tsx';
 import { useRef } from 'react';
 import { useMemoire } from '../utils.ts';
 
@@ -23,14 +23,14 @@ import { useMemoire } from '../utils.ts';
 const GROUPES: { cle: string; titre: string; parties: [string, string][] }[] = [
   { cle: 'renseigner', titre: 'Renseigner', parties: [['parcours', 'Parcours'], ['coord', 'Coordonnées'], ['comp', 'Compétences'], ['projets', 'Projets'], ['diplomes', 'Diplômes et certifications'], ['enseignes', 'Titres enseignés']] },
   { cle: 'optimiser', titre: 'Filtrer et optimiser', parties: [['poids', 'Poids des puces'], ['recherche', "Recherche d'offres"], ['trajets', 'Trajets et revenu'], ['modeles', 'Modèles CV et lettre'], ['badges', 'Synthèse et badges']] },
-  { cle: 'reste', titre: 'Autre', parties: [['notes', 'To-do et veille'], ['bilan', 'Bilan'], ['carte', 'Carte']] },
+  { cle: 'reste', titre: 'Autre', parties: [['notes', 'To-do et veille'], ['bilan', 'Bilan']] },
 ];
 const groupeDe = (partie: string) => GROUPES.find(g => g.parties.some(([k]) => k === partie)) ?? GROUPES[0];
 
 // Tout ce qui décrit le profil, consulté moins souvent que les offres et les candidatures
 export default function Profil({ etat, maj, progression, partie: memorisee, setPartie, offres, compCible, compCibleLue, ouvrirCompetence }) {
-  // NOTE: une partie mémorisée qui n'existe plus ramène à sa remplaçante (« titres » et « formations » avant la ligne 110), sinon au parcours
-  const ANCIENNES = { titres: 'enseignes', formations: 'diplomes', cv: 'parcours' };
+  // NOTE: une partie mémorisée qui n'existe plus ramène à sa remplaçante (« titres » et « formations » avant la ligne 110, « carte » fusionnée dans les trajets ligne 269), sinon au parcours
+  const ANCIENNES = { titres: 'enseignes', formations: 'diplomes', cv: 'parcours', carte: 'trajets' };
   const corps = useRef<HTMLDivElement>(null);
   const [modele, setModele] = useMemoire('profil.modeles', 'cv');
   const partie = ANCIENNES[memorisee] ?? (GROUPES.some(g => g.parties.some(([k]) => k === memorisee)) ? memorisee : 'parcours');
@@ -83,9 +83,8 @@ export default function Profil({ etat, maj, progression, partie: memorisee, setP
           </div>
         )}
         {partie === 'bilan' && <BilanPeriodes etat={etat} offres={offres} />}
-        {partie === 'carte' && <CarteZone />}
         {partie === 'recherche' && <ReglagesRecherche />}
-        {partie === 'trajets' && <Trajets />}
+        {partie === 'trajets' && <div className="notes-stack"><Trajets milieu={departs => <ZoneRecherche departs={departs} />} /></div>}
         {partie === 'poids' && <PoidsPuces experiences={etat.experiences} maj={maj} allerPartie={aller} />}
         {/* NOTE: la lecture du Profil par un RH ouvre le Profil, suivie des badges */}
         {partie === 'badges' && (

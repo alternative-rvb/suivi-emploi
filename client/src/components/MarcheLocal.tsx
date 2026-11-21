@@ -4,7 +4,9 @@ import { chargerMarche } from '../api.ts';
 import type { Marche, MetierMarche, PointMarche } from '../api.ts';
 import { CATEGORIES } from '../constants.ts';
 import AideModale from './AideModale.tsx';
-import { SqCarte } from './Squelettes.tsx';
+import { useHauteur } from '../useHauteur.ts';
+import { useMemoire } from '../utils.ts';
+import { SqMarche } from './Squelettes.tsx';
 
 const nombre = (v: number | null) => (v === null ? '·' : v.toLocaleString('fr-FR'));
 const decimal = (v: number) => v.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
@@ -73,15 +75,21 @@ export default function MarcheLocal() {
   // NOTE: du métier qui compte le plus d'offres par demandeur au moins porteur ; les valeurs non publiées en dernier
   const metiers = useMemo<MetierMarche[]>(() => [...(marche?.metiers ?? [])].sort((a, b) => (b.offres_pour_100 ?? -1) - (a.offres_pour_100 ?? -1)), [marche]);
 
+  // NOTE: hauteur et nombre de métiers mémorisés d'une visite à l'autre : le squelette reprend la forme réelle de la carte, l'agenda et les chiffres dessous ne descendent pas à l'arrivée des données
+  const { ref, hauteur } = useHauteur('auj.marche', 330, Boolean(marche?.actif));
+  const [lignesMemo, setLignesMemo] = useMemoire('marche.lignes', 3);
+  const nbLignes = marche?.metiers?.length ?? 0;
+  useEffect(() => { if (nbLignes > 0 && nbLignes !== lignesMemo) setLignesMemo(nbLignes); });
+
   if (marche && !marche.actif) return null;
-  if (!marche && !erreur) return <SqCarte lignes={4} label="Chargement du marché local" />;
+  if (!marche && !erreur) return <div className="sq-hauteur" style={{ minHeight: hauteur }}><SqMarche lignes={lignesMemo} /></div>;
   const periode = metiers.find(m => m.periode)?.periode;
   const max = Math.max(ECHELLE_MAX, ...metiers.map(m => m.offres_pour_100 ?? 0));
   const reperePct = position(SEUIL_FAVORABLE, max);
   const meilleur = metiers[0]?.offres_pour_100 != null ? metiers[0] : null;
 
   return (
-    <div className="carte marche-local">
+    <div className="carte marche-local" ref={ref}>
       <h3 className="carte-titre">
         <TrendingUp size={17} aria-hidden="true" />Marché local
         <AideModale titre="Marché local">
@@ -100,6 +108,8 @@ export default function MarcheLocal() {
         </AideModale>
         <button type="button" className="btn btn-ghost small icon" onClick={actualiser} disabled={actualisation} aria-label="Actualiser le marché local" title="Actualiser"><RefreshCw size={14} aria-hidden="true" /></button>
       </h3>
+      {marche?.sans_metiers && <p className="muted small">Choisissez d'abord vos métiers dans Profil, partie Recherche, bloc « Métiers recherchés ».</p>}
+      {marche?.sans_rome?.length ? <p className="muted small">Sans code ROME, absent de la carte : {marche.sans_rome.map(c => CATEGORIES[c]?.label ?? c).join(', ')} (code à ajouter dans Profil, bloc « Métiers recherchés »).</p> : null}
       {metiers.length > 0 && (
         <>
           <p className="muted small">

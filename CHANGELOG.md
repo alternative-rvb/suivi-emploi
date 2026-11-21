@@ -10,6 +10,44 @@ Pour mettre à jour votre installation, voir la section « Mettre à jour l'appl
 
 ## [Non publié]
 
+## [1.4.0] - 2026-11-21
+
+### Ajouté
+
+- Accueil : le résumé de la synchro et de l'analyse IA affiche la durée du dernier passage et une durée moyenne (10 dernières synchros, 50 dernières analyses du modèle), avec le temps estimé pour les offres encore à analyser. Le temps restant apparaît dès la première offre d'un passage.
+- Profil > Recherche d'offres : un bloc « Type de recherche et score » pour chercher un emploi, une alternance ou un stage. Les offres dont le contrat ne correspond pas perdent des points au score, sans être masquées, et le nombre de points et la distance à partir de laquelle ils s'appliquent se règlent.
+- En mode alternance ou stage, le diplôme exigé par une annonce ne baisse plus le score.
+- En mode alternance, la synchronisation France Travail ne cherche que les contrats d'apprentissage et de professionnalisation, et le libellé du contrat garde cette nature.
+- Les contrats d'apprentissage, de professionnalisation et les stages sont reconnus dans le libellé du contrat.
+- Plusieurs profils dans une même installation, par exemple pour chercher un emploi et une alternance, ou pour qu'une autre personne suive sa recherche : chaque profil a ses candidatures, son parcours, ses lettres, ses CV et ses réglages, les offres restent communes. Le bouton de profil de la barre du haut (pastille de couleur) ouvre la liste des profils : changer de profil, en créer, renommer ou supprimer un profil (avec confirmation). Les routes acceptent aussi le préfixe `/api/p/<profil>/`.
+- Option `--profil` des commandes `npm run cv`, `npm run analyse` et `npm run rapport`.
+- La démonstration (`npm run demo`) contient deux profils fictifs, emploi et alternance.
+- Profil > Trajets et revenu : un bloc « Zone de recherche » règle la zone proche, les points de départ des distances, les départements à charger et le lieu bonus, pour chaque profil. Les points de départ peuvent être repris des trajets.
+- La synchronisation cherche aussi les offres de chaque profil qui a ses propres réglages de recherche.
+- Profil > Recherche d'offres : un bloc « Métiers recherchés » choisit, dans un catalogue de neuf métiers (formateur digital, web design, développement web, comptabilité, marketing digital, ressources humaines, commercial, assistanat administratif, logistique), ceux que vise chaque profil, dans l'ordre. L'ordre donne les points du score ; les colonnes de « Candidatures à faire », les filtres des offres, les CV, les lettres, les poids des puces et le marché local suivent cette liste.
+- Métiers recherchés : le bouton « Créer un métier » ajoute un métier hors catalogue (nom, intitulé du CV, mots à chercher dans le titre des annonces, mots à exclure, code ROME facultatif, couleur), avec un aperçu des offres reconnues avant l'enregistrement. Les offres dont le titre contient ces mots sont rangées dans ce métier pour ce profil seulement ; un métier créé se modifie ou se supprime depuis la même liste. Sans code ROME, il n'apparaît pas dans le marché local ni dans les candidatures spontanées.
+
+### Modifié
+
+- Barre du haut : l'onglet Profil affiche votre prénom (premier mot du nom affiché des coordonnées) et le sélecteur de profil affiche le nom du profil, bornés à 12 caractères. Admin n'affiche plus que son icône sur une ligne, et les icônes des onglets se masquent entre 1241 et 1359 px pour que tout tienne.
+- Accueil : le bouton Actualiser garde son libellé pendant la synchro (il est seulement désactivé), l'état restant indiqué par le résumé à côté. Le chargement de la carte Marché local reprend la forme de la carte.
+- À la première ouverture, la base passe en version 31 : un profil « Mon profil » est créé, toutes les données existantes lui sont rattachées et rien ne change dans l'usage. Une copie de la base est faite avant dans `data/backups/`.
+- Puis en version 32 : les offres restent communes, mais ce que chaque profil en fait (vue, écartée, épinglée, note, zone proche) lui est propre. L'état actuel des offres est repris pour le profil par défaut, après une copie de la base.
+- La zone du `.env` (`SUIVI_DEPARTEMENT_PROCHE`, `SUIVI_VILLES_PROCHES`, `SUIVI_ORIGINES`, `SUIVI_DEPARTEMENTS_DISTANCE`, `SUIVI_LIEU_BONUS`) est recopiée une fois dans la zone du profil par défaut, puis se règle dans l'interface.
+- Changer les zones ou les mots exclus d'un profil retire les offres concernées de ce profil seulement.
+- Puis en version 33 : une offre peut recevoir n'importe quel métier du catalogue, les offres rangées dans « Autre » sont reclassées, et le profil par défaut d'une base existante garde ses quatre métiers d'avant. Une offre d'un métier que le profil ne vise pas reste affichée dans « Autre ». Copie de la base avant la migration.
+- Profil > Trajets et revenu regroupe désormais la carte : les points de départ s'affichent au-dessus d'une carte qui les montre et les nomme, puis viennent la zone de recherche, le coût du trajet et le revenu attendu. La partie « Carte » du menu Autre disparaît.
+- Zone de recherche : le département proche, les départements des distances, les points de départ du score et le lieu bonus se choisissent dans des listes (départements par leur nom, points de départ déjà enregistrés), une saisie libre restant possible.
+- Trajets et revenu : le carburant se choisit dans une liste et les champs sont alignés en grille, libellé au-dessus.
+- Profil > Recherche d'offres commence par « Ce que vous cherchez » (type de recherche et score, métiers recherchés), puis « Offres reçues » (suggestions de l'IA et les cinq listes).
+- Profil > Diplômes et certifications et Titres enseignés : chaque ligne devient une fiche lisible, sans tableau qui déborde.
+- Profil > Compétences : chaque compétence s'affiche en carte (niveaux, poids, projets, contexte), sans colonnes écrasées.
+- Profil > Parcours : les champs Missions et Résumé grandissent avec leur texte.
+
+### Corrigé
+
+- Onglet Offres : le filtre « Nouvelles » montre exactement les offres marquées New (détectées depuis moins de 3 jours et pas encore vues), au lieu des seules offres du jour. L'accueil compte les nouvelles avec la même règle.
+
 ## [1.3.4] - 2026-11-12
 
 ### Ajouté

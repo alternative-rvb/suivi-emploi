@@ -1,3 +1,5 @@
+import { metierDe } from '../../lib/metiers.mjs';
+import { metiersPerso } from './metiersListe.ts';
 import { texteSur as pdfSafe } from '../../lib/cv-pdf.mjs';
 import { COLONNES_STATS, statsMetier, valeursStat, type BlocRecherche, type LigneJournal } from './actions.ts';
 import { CATEGORIES, INTERETS, STATUTS } from './constants.ts';
@@ -112,9 +114,12 @@ export const rechercheCsv = (blocs: BlocRecherche[]) => tableurCsv(COLONNES_RECH
 // ANCHOR: justificatif de recherche d'emploi : pour chaque candidature (ordre de la date de candidature), une ligne d'en-tête puis ses actions datées et leur résultat
 // NOTE: couleurs des badges du PDF, proches des variables --c-* de style.css (jsPDF ne lit pas le CSS)
 type Rvb = [number, number, number];
-const COULEURS_METIER: Record<string, Rvb> = {
-  comptabilite: [16, 128, 108], formateur_digital: [124, 77, 200], web_design: [214, 64, 138], dev_web: [37, 112, 190], autre: [120, 134, 142],
+// NOTE: une teinte par nom de couleur (couleur du métier dans lib/metiers.mjs ou du métier créé par le profil)
+const COULEURS_PDF: Record<string, Rvb> = {
+  emerald: [16, 128, 108], violet: [124, 77, 200], pink: [214, 64, 138], blue: [37, 112, 190], grey: [120, 134, 142],
+  orange: [222, 110, 40], amber: [196, 140, 30], red: [200, 60, 50], green: [40, 140, 90],
 };
+const couleurMetier = (m: string): Rvb => COULEURS_PDF[metierDe(m, metiersPerso())?.couleur ?? 'grey'] ?? COULEURS_PDF.grey;
 // NOTE: résultat d'une action : vert pour une réussite (entretien, accepté), rouge pour un échec (refusé), gris clair neutre pour l'attente (en cours, sans réponse)
 const NEUTRE: Rvb = [226, 230, 232];
 const COULEURS_STATUT: Record<string, Rvb> = {
@@ -141,14 +146,14 @@ export async function recherchePdf(periode: string, blocs: BlocRecherche[]) {
   doc.setFontSize(10);
   doc.setTextColor(60);
   doc.text(pdfSafe(`${periode} : ${resume}. Édité le ${jj(jour())}.`), 12, 22);
-  const metierDe = (b: { metier: string }) => (COULEURS_METIER[b.metier] ? b.metier : 'autre');
+  const metierBloc = (b: { metier: string }) => (CATEGORIES[b.metier] ? b.metier : 'autre');
   const libelleMetier = (m: string) => pdfSafe((CATEGORIES[m] ?? CATEGORIES.autre).label);
 
   // NOTE: badges mesurés en police du badge (dans didDrawCell la police courante est celle du tableau) ; le texte de la cellule est vidé, le badge le remplace
   const badgeFont = () => { doc.setFontSize(7); doc.setFont('helvetica', 'bold'); };
   badgeFont();
   const largeurTexte = (t: string) => doc.getTextWidth(t) + 3;
-  const largeurMetier = Math.max(...Object.keys(COULEURS_METIER).map(m => largeurTexte(libelleMetier(m))));
+  const largeurMetier = Math.max(...[...new Set(tries.map(metierBloc)), 'autre'].map(m => largeurTexte(libelleMetier(m))));
   const largeurStatut = Math.max(...Object.values(STATUTS).map(v => largeurTexte(pdfSafe(v.label))));
   doc.setFont('helvetica', 'normal');
   type Badge = { texte: string; couleur: Rvb; droite?: boolean };
@@ -173,8 +178,8 @@ export async function recherchePdf(periode: string, blocs: BlocRecherche[]) {
   const body: any[] = [];
   for (const b of tries) {
     const details = [b.plateforme, b.lieu, b.contrat, b.envoi && `envoi : ${b.envoi.toLowerCase()}`].filter(Boolean).join(' · ');
-    const m = metierDe(b);
-    badges.set(`${body.length}:0`, [{ texte: libelleMetier(m), couleur: COULEURS_METIER[m] }, ...(b.statut ? [{ texte: pdfSafe(b.statut), couleur: couleurStatut(b.statut), droite: true }] : [])]);
+    const m = metierBloc(b);
+    badges.set(`${body.length}:0`, [{ texte: libelleMetier(m), couleur: couleurMetier(m) }, ...(b.statut ? [{ texte: pdfSafe(b.statut), couleur: couleurStatut(b.statut), droite: true }] : [])]);
     body.push([{ content: pdfSafe(`${b.numero ? `Offre n° ${b.numero}` : "Sans n° d'offre"}   ${jj(b.date)}   ${[b.employeur, b.poste].filter(Boolean).join(' · ')}${details ? `   (${details})` : ''}`), colSpan: 3,
       styles: { fontStyle: 'bold', fillColor: [235, 240, 240], cellPadding: { top: 1.6, bottom: 1.6, left: 1.6 + largeurMetier + 2.5, right: 1.6 + largeurStatut + 2.5 } } }]);
     for (const l of b.lignes) {
@@ -220,7 +225,7 @@ export async function recherchePdf(periode: string, blocs: BlocRecherche[]) {
   doc.text(pdfSafe(`${resume} sur la période.`), 12, y + 6);
 
   const marquesMetier = new Map<string, Badge[]>();
-  parMetier.forEach((s, r) => { if (s.metier) marquesMetier.set(`${r}:0`, [{ texte: libelleMetier(metierDe(s)), couleur: COULEURS_METIER[metierDe(s)] }]); });
+  parMetier.forEach((s, r) => { if (s.metier) marquesMetier.set(`${r}:0`, [{ texte: libelleMetier(metierBloc(s)), couleur: couleurMetier(metierBloc(s)) }]); });
   autoTable(doc, {
     startY: y + 10,
     head: [['Métier', ...COLONNES_STATS].map(pdfSafe)],

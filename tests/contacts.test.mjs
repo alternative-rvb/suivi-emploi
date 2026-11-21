@@ -1,6 +1,7 @@
 // Tests des contacts (ligne 119) : schéma v11 (contraintes, clés étrangères, index), offres liées épargnées par la purge, routes CRUD journalisées.
 // Données fictives uniquement, base et serveur dans un dossier temporaire, sans .env (aucun appel réseau).
 import test from 'node:test';
+import { brancherProfils } from '../lib/profils.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,6 +24,7 @@ test('schéma v11 : migration depuis la v10, tables, index et clés étrangères
     ouvrirBase(chemin).close();
     // NOTE: base v10 simulée : tables v11 retirées, version redescendue
     const brute = new DatabaseSync(chemin);
+    brancherProfils(brute);
     brute.exec('DROP TABLE contact_offres; DROP TABLE rendez_vous; DROP TABLE contacts; PRAGMA user_version = 10');
     brute.close();
     const db = ouvrirBase(chemin);
@@ -31,7 +33,7 @@ test('schéma v11 : migration depuis la v10, tables, index et clés étrangères
     const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(r => r.name));
     for (const t of ['contacts', 'contact_offres', 'rendez_vous']) assert.ok(tables.has(t), t);
     const index = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all().map(r => r.name));
-    for (const i of ['contact_offres_offre', 'contacts_entreprise', 'rendez_vous_debut', 'rendez_vous_offre', 'rendez_vous_candidature', 'rendez_vous_contact', 'rendez_vous_google']) assert.ok(index.has(i), i);
+    for (const i of ['contact_offres_offre', 'contacts_entreprise', 'rendez_vous_debut', 'rendez_vous_offre', 'rendez_vous_candidature', 'rendez_vous_contact', 'rendez_vous_google_profil']) assert.ok(index.has(i), i);
     // NOTE: chaque colonne de jointure est couverte par un index (clé primaire ou index dédié)
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
     // NOTE: la v11 ne fait que créer des tables, aucune copie de sauvegarde n'est nécessaire

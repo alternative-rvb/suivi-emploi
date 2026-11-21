@@ -1,4 +1,5 @@
 import { MARSEILLE_ARRONDISSEMENTS } from './marseille.ts';
+import { urlApi } from './profil.ts';
 
 // ANCHOR: géographie de la fiche offre : centre d'une commune, trajet par la route, coût
 // NOTE: services externes appelés depuis le navigateur (geo.api.gouv.fr, router.project-osrm.org). Seuls des centres de communes partent.
@@ -105,7 +106,7 @@ export function itineraireTrace(de, vers) {
   return traces.get(cle);
 }
 
-// ANCHOR: centres des communes des départements de la zone de distance (GET /api/zone, réglée dans le .env, voir lib/zone.mjs), pour la distance du score de pertinence
+// ANCHOR: centres des communes des départements de la zone de distance (GET /api/zone, zone du profil ouvert, voir lib/zone.mjs), pour la distance du score de pertinence
 // NOTE: un appel à geo.api.gouv.fr par département, gardé dans localStorage 30 jours ; sans réglage, sans réseau ni cache, le score garde la zone « proche » tout ou rien
 let DEPARTEMENTS_ZONE: string[] = [];
 let ORIGINES: [number, number][] = [];
@@ -122,7 +123,7 @@ export function chargerCentresZone(): Promise<void> {
   if (chargement) return chargement;
   chargement = (async () => {
     try {
-      const r = await fetch('/api/zone');
+      const r = await fetch(urlApi('/api/zone'));
       const z = r.ok ? await r.json() : null;
       DEPARTEMENTS_ZONE = Array.isArray(z?.departements) ? z.departements : [];
       ORIGINES = Array.isArray(z?.origines) ? z.origines : [];
@@ -159,13 +160,20 @@ export function chargerCentresZone(): Promise<void> {
   return chargement;
 }
 
-// NOTE: points de départ du .env (SUIVI_ORIGINES), distance à vol d'oiseau majorée de 30 % pour approcher la route
+// NOTE: zone modifiée (Profil > Trajets et revenu) : la prochaine lecture recharge la zone et ses communes
+export function oublierZone() {
+  chargement = null;
+  centresZone.clear();
+  DEPARTEMENTS_ZONE = []; ORIGINES = []; LIEU_BONUS = null;
+}
+
+// NOTE: points de départ de la zone du profil, distance à vol d'oiseau majorée de 30 % pour approcher la route
 export function distanceZoneKm(o: { departement?: string; ville?: string }): number | null {
   const c = centresZone.get(cleCommune(o.departement || '', o.ville || ''));
   return c && ORIGINES.length ? Math.round(Math.min(...ORIGINES.map(p => vol(p, c))) * 1.3) : null;
 }
 
-// NOTE: lieu bonus facultatif du .env (SUIVI_LIEU_BONUS) : pas une origine du score, sa distance ne sert qu'à un petit bonus discret
+// NOTE: lieu bonus facultatif de la zone du profil : pas une origine du score, sa distance ne sert qu'à un petit bonus discret
 export function distanceLieuBonusKm(o: { departement?: string; ville?: string }): number | null {
   const c = centresZone.get(cleCommune(o.departement || '', o.ville || ''));
   return c && LIEU_BONUS ? Math.round(vol(LIEU_BONUS, c) * 1.3) : null;

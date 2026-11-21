@@ -1,6 +1,7 @@
 import { CANAUX, MODES_ENVOI, SENT, STATUTS } from './constants.ts';
 import { rapprocher } from './doublons.ts';
 import { classer } from '../../lib/classement.mjs';
+import { categorieVue } from './metiersListe.ts';
 
 const ENVOYEES = new Set(['en_cours', 'entretien', 'sans_reponse', 'refuse', 'accepte']);
 
@@ -220,7 +221,7 @@ export function rechercheEmploi(etat: any, offres: any[], evenements: any[], du:
         envoi,
         statut: statutLabel(c.statut),
         // NOTE: métier de l'offre liée ou retrouvée, sinon déduit de l'intitulé du poste (même classement que la synchro)
-        metier: String(offre?.categorie || classer(c.poste)),
+        metier: String(offre?.categorie || categorieVue(c.poste, classer(c.poste))),
         lignes: lignes.sort((a, b) => a.ordre.localeCompare(b.ordre)).map(({ date, texte, rdv }) => {
           const s = statutAu(date);
           return { date, texte, resultat: statutLabel(rdv && (s === 'en_cours' || s === 'a_faire') ? 'entretien' : s), periode: dans(date) };

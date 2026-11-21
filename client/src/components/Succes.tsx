@@ -1,4 +1,5 @@
 import { PartyPopper, X } from 'lucide-react';
+import { cleMemoire } from '../profil.ts';
 import { useEffect, useState } from 'react';
 import { badgesObtenus, grade, lundiDe, semaine } from '../progression.ts';
 import { aujourdhui, useMemoire } from '../utils.ts';
@@ -7,7 +8,7 @@ export const CLE_NOTIFS = 'succes.notifs';
 
 // NOTE: préférence lue au moment de l'envoi (elle se règle dans Profil > Badges), stockage du navigateur indisponible : pas de notification
 const notifsActives = () => {
-  try { return typeof Notification !== 'undefined' && Notification.permission === 'granted' && localStorage.getItem('suivi.' + CLE_NOTIFS) === 'true'; } catch { return false; }
+  try { return typeof Notification !== 'undefined' && Notification.permission === 'granted' && localStorage.getItem(cleMemoire(CLE_NOTIFS)) === 'true'; } catch { return false; }
 };
 
 function notifier(titre: string, corps: string) {

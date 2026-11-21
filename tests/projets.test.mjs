@@ -1,6 +1,7 @@
 // Tests des projets (ligne 145) : schéma v19 (tables, index, clés étrangères) et routes CRUD liées aux compétences.
 // Données fictives uniquement, base et serveur dans un dossier temporaire, sans .env (aucun appel réseau).
 import test from 'node:test';
+import { brancherProfils } from '../lib/profils.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +17,7 @@ test('schéma v19 : migration depuis la v18, tables, index et clés étrangères
     ouvrirBase(chemin).close();
     // NOTE: base v18 simulée : tables v19 retirées, version redescendue
     const brute = new DatabaseSync(chemin);
+    brancherProfils(brute);
     brute.exec('DROP TABLE projet_competences; DROP TABLE projets; PRAGMA user_version = 18');
     brute.close();
     const db = ouvrirBase(chemin);

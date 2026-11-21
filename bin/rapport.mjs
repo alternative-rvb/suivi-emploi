@@ -1,17 +1,24 @@
-// Usage : npm run rapport -- [--jour | --semaine | --mois] [--du AAAA-MM-JJ] [--au AAAA-MM-JJ] [--csv]
+// Usage : npm run rapport -- [--profil p-xxxxxxxx] [--jour | --semaine | --mois] [--du AAAA-MM-JJ] [--au AAAA-MM-JJ] [--csv]
 // Rapport d'activité tiré du journal des actions (lib/journal.mjs) : offres vues, écartées, candidatures, statuts, tâches, échanges.
 // Par défaut : les 14 derniers jours, jour par jour (ou les 4 dernières semaines avec --semaine, les 12 derniers mois avec --mois). --csv écrit sur la sortie standard, prêt pour un tableur.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ouvrirBase } from '../lib/offres.mjs';
 import { rapport, rapportCsv } from '../lib/journal.mjs';
+import { avecProfil, profilDefaut } from '../lib/profils.mjs';
 
 // NOTE: les commandes sont dans bin/ ; la base, le .env et data/ sont à la racine du projet
 const ici = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const valeur = nom => (args.includes(`--${nom}`) ? args[args.indexOf(`--${nom}`) + 1] : undefined);
 const db = ouvrirBase(join(ici, 'suivi.db'));
-const r = rapport(db, { du: valeur('du'), au: valeur('au'), grain: args.includes('--semaine') ? 'semaine' : args.includes('--mois') ? 'mois' : 'jour' });
+// ANCHOR: rapport du profil --profil, sinon du profil par défaut de l'installation
+const profil = valeur('profil') ?? profilDefaut(db);
+if (!db.prepare('SELECT 1 FROM profils WHERE id = ?').get(profil)) {
+  console.error(`Profil ${profil} introuvable.`);
+  process.exit(1);
+}
+const r = avecProfil(profil, () => rapport(db, { du: valeur('du'), au: valeur('au'), grain: args.includes('--semaine') ? 'semaine' : args.includes('--mois') ? 'mois' : 'jour' }));
 
 if (args.includes('--csv')) {
   process.stdout.write(rapportCsv(r));

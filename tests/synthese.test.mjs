@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 const { filtrerVeille, lancerSynthese, ouvrirSyntheses, resumeSyntheses, sourceProfil, validerProfilIa, validerVeille } = await import('../lib/analyse/synthese.mjs');
 const { ErreurSync } = await import('../lib/erreurs.mjs');
 const { ouvrirBase } = await import('../lib/offres.mjs');
+const { ecrireReglageProfil } = await import('../lib/profils.mjs');
 
 const REGLAGES = { zones: ['83'], mots_cles: ['comptable'], mots_exclus: ['stage'], contrats_exclus: [], entreprises: [] };
 const CANDIDATURES = [
@@ -19,8 +20,8 @@ const faux = (repondre, extra = {}) => ({ id: 'faux', nom: 'Faux', modele: 'm', 
 function baseTest() {
   const db = ouvrirBase(':memory:');
   ouvrirSyntheses(db);
-  db.prepare("INSERT INTO kv (cle, valeur) VALUES ('reglages', ?)").run(JSON.stringify(REGLAGES));
-  db.prepare("INSERT INTO kv (cle, valeur) VALUES ('profil', ?)").run(JSON.stringify({ accroche: 'Comptable et formateur digital', resume: 'Tenue de comptabilité sur Sage, animation de formations web.', contact: { nom: 'Personne Fictive', telephone: '0600000000' } }));
+  ecrireReglageProfil(db, 'reglages', REGLAGES);
+  ecrireReglageProfil(db, 'profil', { accroche: 'Comptable et formateur digital', resume: 'Tenue de comptabilité sur Sage, animation de formations web.', contact: { nom: 'Personne Fictive', telephone: '0600000000' } });
   db.prepare("INSERT INTO offres (id_offre, titre, entreprise, departement, ville, categorie, date_detection) VALUES ('o1', 'Assistant comptable', 'ClientABC', '13', 'Marseille', 'comptabilite', '2026-10-20')").run();
   db.prepare("INSERT INTO candidatures (id, entreprise, poste, statut, date, offre_id) VALUES ('c1', 'ClientABC', 'Assistant comptable', 'entretien', '2026-10-21', 'o1')").run();
   return db;
@@ -97,7 +98,7 @@ test('passage complet : résultat en cache, périmé quand les candidatures chan
   assert.equal(v.a_jour, true);
   assert.deepEqual(v.resultat.zones.map(s => s.valeur), ['13']);
   // NOTE: modifier les réglages ne périme pas le résultat, ajouter une candidature si
-  db.prepare("INSERT INTO kv (cle, valeur) VALUES ('reglages', ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur").run(JSON.stringify({ ...REGLAGES, zones: ['83', '13'] }));
+  ecrireReglageProfil(db, 'reglages', { ...REGLAGES, zones: ['83', '13'] });
   v = resumeSyntheses(db, {}).veille;
   assert.equal(v.a_jour, true);
   assert.deepEqual(v.resultat.zones, []);

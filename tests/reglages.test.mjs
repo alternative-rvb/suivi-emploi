@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { ecrireReglages, ErreurReglages, lireReglages, validerReglages } from '../lib/reglages.mjs';
 import { offresRetirables, ouvrirBase, retirerOffres } from '../lib/offres.mjs';
 import { lancerSync } from '../lib/sync.mjs';
+import { CLES_PROFIL, ecrireReglageProfil } from '../lib/profils.mjs';
 
 const valide = (extra = {}) => ({ zones: ['83'], mots_cles: ['comptable'], mots_exclus: [], contrats_exclus: ['FRA'], entreprises: [], ...extra });
 const base = () => {
@@ -16,7 +17,8 @@ const base = () => {
 };
 const aujourdhui = new Date().toISOString().slice(0, 10);
 const ligne = (id, extra = {}) => ({ id_offre: id, titre: 'Comptable (H/F)', entreprise: 'ClientABC', lieu: '83 - Villeneuve', type_de_contrat: 'CDI', salaire: null, lien: '', date_de_detection: aujourdhui, description: 'T', ...extra });
-const kv = (db, cle, valeur) => db.prepare('INSERT OR REPLACE INTO kv (cle, valeur) VALUES (?, ?)').run(cle, JSON.stringify(valeur));
+// NOTE: depuis la v31, les clés personnelles vont dans les réglages du profil actif, les autres dans le kv d'installation
+const kv = (db, cle, valeur) => (CLES_PROFIL.includes(cle) ? ecrireReglageProfil(db, cle, valeur) : db.prepare('INSERT OR REPLACE INTO kv (cle, valeur) VALUES (?, ?)').run(cle, JSON.stringify(valeur)));
 
 test('validation : nettoie, déduplique et normalise', () => {
   const r = validerReglages(valide({ zones: [' 83 ', '83', '2a'], mots_cles: ['  assistant   comptable ', 'Assistant comptable', ''], contrats_exclus: ['fra', 'sta'] }));
@@ -105,10 +107,51 @@ test('retrait : aperçu et suppression, en gardant offres liées à une candidat
       ligne('1AAAAAA'), ligne('2BBBBBB', { lieu: '13 - Aubagne' }), ligne('3CCCCCC', { lieu: '13 - Aix' }), ligne('4DDDDDD', { titre: 'Comptable senior (H/F)' }),
     ] }) }]);
     t.db.prepare("INSERT INTO offres (id_offre, titre, departement, categorie) VALUES ('man-1', 'Perso', '99', 'autre')").run();
+    t.db.prepare("INSERT INTO offre_suivis (id_offre) VALUES ('man-1')").run();
     t.db.prepare("INSERT INTO candidatures (id, entreprise, poste, statut, offre_id) VALUES ('c1', 'ClientABC', 'Comptable', 'en_cours', '3CCCCCC')").run();
     const r = valide({ zones: ['83'], mots_exclus: ['senior'] });
     assert.deepEqual(offresRetirables(t.db, r), { hors_zone: 1, exclues: 1, total: 2 });
     assert.equal(retirerOffres(t.db, r), 2);
     assert.deepEqual(t.db.prepare('SELECT id_offre FROM offres ORDER BY id_offre').all().map(o => o.id_offre), ['1AAAAAA', '3CCCCCC', 'man-1']);
+  } finally { t.fin(); }
+});
+
+test('réglages du score : facultatifs, défauts du comportement d\'origine, bornes contrôlées', () => {
+  const r = validerReglages(valide());
+  assert.equal(r.mode, 'emploi');
+  assert.equal(r.malus_contrat, 15);
+  assert.equal(r.km_tous_contrats, 40);
+  const etudiant = validerReglages(valide({ mode: 'alternance', malus_contrat: 10, km_tous_contrats: 0 }));
+  assert.deepEqual([etudiant.mode, etudiant.malus_contrat, etudiant.km_tous_contrats], ['alternance', 10, 0]);
+  /** @type {[any, RegExp][]} */
+  const echecs = [[{ mode: 'freelance' }, /mode/], [{ malus_contrat: 31 }, /malus_contrat/], [{ malus_contrat: -1 }, /malus_contrat/], [{ km_tous_contrats: 2.5 }, /km_tous_contrats/]];
+  for (const [extra, motif] of echecs) assert.throws(() => validerReglages(valide(extra)), (/** @type {any} */ e) => e instanceof ErreurReglages && motif.test(e.message));
+});
+
+test('réglages du score : un enregistrement d\'avant (sans ces champs) se relit avec les défauts', () => {
+  const t = base();
+  try {
+    kv(t.db, 'reglages', valide());
+    const { reglages, origine } = lireReglages(t.db);
+    assert.equal(origine, 'app');
+    assert.deepEqual([reglages.mode, reglages.malus_contrat, reglages.km_tous_contrats], ['emploi', 15, 40]);
+    assert.equal(lireReglages(base().db).reglages.mode, 'emploi');
+  } finally { t.fin(); }
+});
+
+test('synchro multi-profils : chaque profil avec ses réglages suit ses offres, un profil sans réglages propres est sauté', async () => {
+  const t = base();
+  try {
+    const { avecProfil, creerProfil } = await import('../lib/profils.mjs');
+    const autre = /** @type {{ id: string }} */ (creerProfil(t.db, { nom: 'Autre' }));
+    const vide = /** @type {{ id: string }} */ (creerProfil(t.db, { nom: 'Vide' }));
+    avecProfil(autre.id, () => ecrireReglages(t.db, valide({ zones: ['13'] })));
+    const offres = [ligne('1AAAAAA'), ligne('2BBBBBB', { lieu: '13 - Aubagne' })];
+    const r = await lancerSync(t.db, t.dossier, 'test', [{ id: 'p', nom: 'p', secours: false, recuperer: async () => ({ date: 'x', zones: ['83', '13'], exclusions: [], offres }) }]);
+    assert.deepEqual(r.profils.map(p => [p.nom, p.ok]), [['Mon profil', true], ['Autre', true]]);
+    const suivies = id => t.db.prepare('SELECT id_offre FROM offre_suivis WHERE profil_id = ? ORDER BY id_offre').all(id).map(o => o.id_offre);
+    assert.deepEqual(suivies(autre.id), ['2BBBBBB']);
+    assert.deepEqual(suivies(vide.id), []);
+    assert.equal(t.db.prepare('SELECT COUNT(*) n FROM offres').get().n, 2);
   } finally { t.fin(); }
 });

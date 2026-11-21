@@ -1,10 +1,12 @@
 import { Briefcase, Languages, Pencil, Plus, SlidersHorizontal, Trash2, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { anneesParCategorie } from '../../../lib/parcours.mjs';
-import { METIERS_CV, TYPES_EXPERIENCE as VALEURS_TYPE } from '../../../lib/listes.mjs';
+import { TYPES_EXPERIENCE as VALEURS_TYPE } from '../../../lib/listes.mjs';
+import { clesMetierDe } from '../../../lib/metiers.mjs';
 import { periodeFormation } from '../../../lib/periode.mjs';
 import { clePuce, normaliserPoids, puces } from '../../../lib/cv.mjs';
 import { CATEGORIES } from '../constants.ts';
+import { useMetiers } from '../metiers.ts';
 import ImportLinkedin from './ImportLinkedin.tsx';
 import Select from './Select.tsx';
 import Etiquettes from './Etiquettes.tsx';
@@ -12,12 +14,11 @@ import Etiquettes from './Etiquettes.tsx';
 // NOTE: valeurs tirées de lib/listes.mjs (celles que le serveur accepte), seuls les libellés vivent ici
 const LIBELLES_TYPE = { salarie: 'Salarié', freelance: 'Freelance', formateur: 'Formateur', autre: 'Autre' };
 export const TYPES_EXPERIENCE = VALEURS_TYPE.map(k => [k, LIBELLES_TYPE[k] ?? k]);
-const OPTIONS_CATEGORIE = Object.entries(CATEGORIES).filter(([k]) => k !== 'toutes').map(([k, c]) => [k, c.label]);
 const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 
 const VIDE = { poste: '', employeur: '', lieu: '', type: 'salarie', categorie: 'autre', debut: '', fin: '', description: '', competences: [] as string[], intitules: {} as Record<string, string>, poids: {} as Record<string, Record<string, number>> };
-// NOTE: même forme que le serveur (ordre de METIERS_CV, espaces retirés, vides supprimés), sinon l'envoi par différence verrait un écart à chaque chargement
-const intitulesPropres = (v: Record<string, string> = {}) => Object.fromEntries(METIERS_CV.map(m => [m, (v[m] ?? '').trim()]).filter(([, t]) => t));
+// NOTE: même forme que le serveur (ordre de clesMetierDe, espaces retirés, vides supprimés), sinon l'envoi par différence verrait un écart à chaque chargement
+const intitulesPropres = (v: Record<string, string> = {}) => Object.fromEntries(clesMetierDe(v).map(m => [m, (v[m] ?? '').trim()]).filter(([, t]) => t));
 
 // NOTE: mois en nombre continu, pour la durée et le tri de la frise
 const indice = (m: string) => (/^\d{4}-\d{2}$/.test(m ?? '') ? Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1 : null);
@@ -40,6 +41,8 @@ export const triFrise = (a, b) => (b.fin === '' ? 1 : 0) - (a.fin === '' ? 1 : 0
 
 // ANCHOR: partie Parcours du Profil, façon Malt ou LinkedIn : accroche, expériences en frise (compétences liées), formations et langues en rappel
 export default function Parcours({ etat, maj, allerPartie, ouvrirCompetence }) {
+  // NOTE: métiers du profil proposés pour une expérience (et autre) ; celui déjà choisi reste affiché même hors de la liste
+  const { affiches: metiers } = useMetiers();
   const { experiences, competences, formations, profil } = etat;
   const [edition, setEdition] = useState<string | null>(null);
   const [brouillon, setBrouillon] = useState<any>(VIDE);
@@ -94,21 +97,21 @@ export default function Parcours({ etat, maj, allerPartie, ouvrirCompetence }) {
         <label className="field">Employeur ou client<input className="input" value={brouillon.employeur} onChange={e => champ('employeur', e.target.value)} /></label>
         <label className="field">Lieu<input className="input" value={brouillon.lieu} onChange={e => champ('lieu', e.target.value)} /></label>
         <div className="field">Statut<Select value={brouillon.type} onChange={e => champ('type', e.target.value)} options={TYPES_EXPERIENCE} aria-label="Statut" /></div>
-        <div className="field">Métier compté pour l'analyse<Select value={brouillon.categorie} onChange={e => champ('categorie', e.target.value)} options={OPTIONS_CATEGORIE} aria-label="Métier" /></div>
+        <div className="field">Métier compté pour l'analyse<Select value={brouillon.categorie} onChange={e => champ('categorie', e.target.value)} options={[...new Set([...metiers, 'autre', brouillon.categorie])].map(k => [k, CATEGORIES[k]?.label ?? k])} aria-label="Métier" /></div>
         <label className="field">Début<input className="input" type="month" value={brouillon.debut} onChange={e => champ('debut', e.target.value)} /></label>
         <label className="field">Fin (vide si en cours)<input className="input" type="month" value={brouillon.fin} onChange={e => champ('fin', e.target.value)} /></label>
       </div>
       <div className="field">
         Intitulé selon le CV visé (vide = poste)
         <div className="parcours-grille">
-          {METIERS_CV.map(m => (
+          {metiers.map(m => (
             <label key={m} className="field small">{CATEGORIES[m]?.label ?? m}
               <input className="input" value={brouillon.intitules?.[m] ?? ''} placeholder={brouillon.poste} maxLength={120} onChange={e => champ('intitules', { ...brouillon.intitules, [m]: e.target.value })} />
             </label>
           ))}
         </div>
       </div>
-      <label className="field">Missions et réalisations<textarea className="input" rows={4} value={brouillon.description} onChange={e => champ('description', e.target.value)} /></label>
+      <label className="field">Missions et réalisations<textarea className="input texte-long" rows={6} value={brouillon.description} onChange={e => champ('description', e.target.value)} /></label>
       <div className="field">
         Compétences mobilisées
         <Etiquettes items={brouillon.competences.map(id => ({ cle: id, libelle: parId.get(id)?.competence ?? id, contenu: parId.get(id)?.competence ?? id }))}
@@ -137,7 +140,7 @@ export default function Parcours({ etat, maj, allerPartie, ouvrirCompetence }) {
           <button type="button" className="btn small" onClick={() => setImporter(v => !v)} aria-expanded={importer}><Upload size={15} />Importer l'export LinkedIn</button>
         </div>
         <label className="field">Accroche<input className="input" placeholder="Comptable et formateur digital, 15 ans d'expérience..." value={profil?.accroche ?? ''} onChange={e => maj(s => ({ profil: { ...s.profil, accroche: e.target.value } }))} /></label>
-        <label className="field">Résumé<textarea className="input" rows={4} value={profil?.resume ?? ''} onChange={e => maj(s => ({ profil: { ...s.profil, resume: e.target.value } }))} /></label>
+        <label className="field">Résumé<textarea className="input texte-long" rows={6} value={profil?.resume ?? ''} onChange={e => maj(s => ({ profil: { ...s.profil, resume: e.target.value } }))} /></label>
       </div>
 
       {importer && <ImportLinkedin etat={etat} maj={maj} fermer={() => setImporter(false)} />}

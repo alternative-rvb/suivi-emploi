@@ -47,6 +47,7 @@ function remplir(db) {
   j('2026-10-26T11:00:00Z', { entite: 'tache', id: 't1', libelle: 'Relancer', action: 'modification', changements: [{ champ: 'faite', avant: '0', apres: '1' }] });
   j('2026-10-26T12:00:00Z', { entite: 'echange', id: 'e1', libelle: 'email envoye', action: 'creation' });
   db.prepare("INSERT INTO offres (id_offre, titre, categorie, date_detection) VALUES ('d1', 'X', 'autre', '2026-10-19'), ('d2', 'Y', 'autre', '2026-10-19')").run();
+  db.exec('INSERT INTO offre_suivis (id_offre) SELECT id_offre FROM offres');
 }
 
 test('rapport par jour : compteurs par action, jours sans action à zéro, remise à non vue non comptée', () => {

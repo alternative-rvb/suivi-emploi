@@ -9,8 +9,8 @@ process.env.FT_PAUSE_MS = '0';
 process.env.FT_CLIENT_ID = 'id-test';
 process.env.FT_CLIENT_SECRET = 'secret-test';
 
-const { default: ft, verifierEnLigne } = await import('../lib/providers/france-travail.mjs');
-const { lancerSync, ErreurSync } = await import('../lib/sync.mjs');
+const { default: ft, verifierEnLigne, libelleContrat } = await import('../lib/providers/france-travail.mjs');
+const { lancerSync, ErreurSync, etatSync } = await import('../lib/sync.mjs');
 const { ouvrirBase } = await import('../lib/offres.mjs');
 
 const CONFIG = { mots_cles: ['comptable'], zones: ['83'], contrats_exclus: ['FRA'], entreprises: [], mots_exclus: [] };
@@ -42,6 +42,22 @@ test('provider : renvoie les offres au format de la veille', () => avec(() => js
   assert.equal(r.offres[0].salaire, '26400');
   assert.equal(r.offres[0].description, 'Texte');
 }));
+
+// ANCHOR: mode alternance (ligne 259) : filtre natureContrat E2,FS dans l'URL, nature gardée dans le libellé du contrat ; mode emploi : aucun filtre
+test('provider : filtre et libellé selon le mode de recherche', () => avec(() => json({ resultats: [brute('222BBBB', { typeContratLibelle: 'Contrat à durée déterminée - 24 Mois', natureContrat: 'Contrat apprentissage', alternance: true })] }), async appels => {
+  const r = await ft.recuperer({ config: { ...CONFIG, mode: 'alternance' } });
+  assert.equal(new URL(appels[0]).searchParams.get('natureContrat'), 'E2,FS');
+  assert.equal(r.offres[0].type_de_contrat, 'Contrat à durée déterminée - 24 mois, apprentissage');
+  await ft.recuperer({ config: CONFIG });
+  assert.equal(new URL(appels.at(-1)).searchParams.get('natureContrat'), null);
+}));
+
+test('provider : libellé de contrat', () => {
+  assert.equal(libelleContrat({ typeContratLibelle: 'CDI' }), 'CDI');
+  assert.equal(libelleContrat({ typeContratLibelle: 'CDD - 12 Mois', natureContrat: 'Contrat travail' }), 'CDD - 12 mois');
+  assert.equal(libelleContrat({ typeContratLibelle: 'CDD - 12 Mois', natureContrat: 'Contrat de professionnalisation' }), 'CDD - 12 mois, professionnalisation');
+  assert.equal(libelleContrat({ typeContratLibelle: '', alternance: true }), 'alternance');
+});
 
 test('provider : sans configuration de veille, erreur de configuration claire', async () => {
   await assert.rejects(ft.recuperer({ config: null }), (/** @type {any} */ e) => e instanceof ErreurSync && e.code === 'config');
@@ -145,6 +161,28 @@ test('synchro : toutes les sources en panne, erreur typée et offres conservées
   } finally { t.nettoyer(); }
 });
 
+test('synchro : durée du dernier passage et moyenne des réussites, un échec ne la fausse pas', async () => {
+  const t = baseTemporaire();
+  try {
+    const lent = faux('a', false, async () => { await new Promise(r => setTimeout(r, 20)); return { date: 'x', offres: [ligne('1AAAAAA')], zones: ['83'], exclusions: [] }; });
+    const r1 = await lancerSync(t.db, t.dossier, 'test', [lent]);
+    assert.ok(r1.duree_ms >= 19);
+    assert.equal(r1.durees.length, 1);
+    const r2 = await lancerSync(t.db, t.dossier, 'test', [lent]);
+    assert.equal(r2.durees.length, 2);
+    assert.equal(r2.moyenne_ms, Math.round((r2.durees[0] + r2.durees[1]) / 2));
+    await assert.rejects(lancerSync(t.db, t.dossier, 'test', [faux('a', false, panne())]));
+    const echec = /** @type {any} */ (etatSync.dernier);
+    assert.equal(echec.ok, false);
+    assert.equal(typeof echec.duree_ms, 'number');
+    assert.deepEqual(echec.durees, r2.durees);
+    assert.equal(echec.moyenne_ms, r2.moyenne_ms);
+    // l'historique reprend après l'échec, 10 durées au plus
+    for (let i = 0; i < 12; i++) await lancerSync(t.db, t.dossier, 'test', [faux('a', false, ok(ligne('1AAAAAA')))]);
+    assert.equal(/** @type {any} */ (etatSync.dernier).durees.length, 10);
+  } finally { t.nettoyer(); }
+});
+
 test('synchro : le secours ne tourne que si le principal échoue, et signale l\'échec', async () => {
   const t = baseTemporaire();
   try {
@@ -184,9 +222,9 @@ test('synchro : les notes, l\'état écarté et le lien de candidature survivent
   const t = baseTemporaire();
   try {
     await lancerSync(t.db, t.dossier, 'test', [faux('p', false, ok(ligne('1AAAAAA')))]);
-    t.db.prepare("UPDATE offres SET ignoree = 1, description = 'ma note' WHERE id_offre = '1AAAAAA'").run();
+    t.db.prepare("UPDATE offre_suivis SET ignoree = 1, description = 'ma note' WHERE id_offre = '1AAAAAA'").run();
     await lancerSync(t.db, t.dossier, 'test', [faux('p', false, ok(ligne('1AAAAAA', { titre: 'Comptable général (H/F)' })))]);
-    const o = t.db.prepare("SELECT ignoree, description, titre FROM offres WHERE id_offre = '1AAAAAA'").get();
+    const o = t.db.prepare("SELECT s.ignoree, s.description, o.titre FROM offres o JOIN offre_suivis s USING (id_offre) WHERE id_offre = '1AAAAAA'").get();
     assert.equal(o.ignoree, 1);
     assert.equal(o.description, 'ma note');
     assert.equal(o.titre, 'Comptable général (H/F)');

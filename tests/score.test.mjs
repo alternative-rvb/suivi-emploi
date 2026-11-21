@@ -58,8 +58,35 @@ test('lieu bonus : +3 points à 15 km ou moins, total inchangé au-delà', () =>
   assert.equal(avec.total - sans.total, 3);
 });
 
-test('métier visé : formateur > web design > dev web > comptabilité', () => {
-  const f = calcul(() => null);
+test('métier visé : poids selon le rang dans la liste du profil, rien hors de la liste ni sans liste', () => {
+  const avec = metiers => preparerScore([], '2026-10-28', [], [], () => null, () => null, { metiers });
+  const f = avec(['formateur_digital', 'web_design', 'dev_web', 'comptabilite']);
   const [fo, wd, dw, co] = ['formateur_digital', 'web_design', 'dev_web', 'comptabilite'].map(c => f(offre({ categorie: c })).categorie);
-  assert.ok(fo > wd && wd > dw && dw > co && co > 0);
+  assert.deepEqual([fo, wd, dw, co], [14, 13, 12, 11]);
+  // NOTE: un autre ordre change les poids ; un métier absent de la liste ne compte pas
+  const g = avec(['comptabilite', 'logistique']);
+  assert.equal(g(offre({ categorie: 'comptabilite' })).categorie, 14);
+  assert.equal(g(offre({ categorie: 'logistique' })).categorie, 13);
+  assert.equal(g(offre({ categorie: 'dev_web' })).categorie, 0);
+  assert.equal(avec([])(offre({ categorie: 'dev_web' })).categorie, 0);
+});
+
+test('options du score : mode alternance, malus et distance réglés', () => {
+  const avec = (options, km = () => 55) => preparerScore([], '2026-10-28', [], [], km, () => null, options);
+  assert.equal(avec({ mode: 'alternance' })(loin({ contrat: 'Alternance' })).contrat, 0);
+  assert.equal(avec({ mode: 'alternance' })(loin({ contrat: 'CDI' })).contrat, -15);
+  assert.equal(avec({ mode: 'alternance', malus: 5 })(loin({ contrat: 'CDI' })).contrat, -5);
+  // NOTE: distance relevée à 60 km : une offre à 55 km n'est plus « loin »
+  assert.equal(avec({ km: 60 })(loin()).contrat, 0);
+  // NOTE: distance à 0 : malus partout, même proche et même sans distance connue
+  assert.equal(avec({ mode: 'alternance', km: 0 }, () => null)(loin({ contrat: 'CDI', proche: 1 })).contrat, -15);
+  // NOTE: sans options, comportement d'origine
+  assert.equal(avec({})(loin()).contrat, -15);
+});
+
+test('options du score : hors mode emploi, le diplôme exigé ne coûte rien', () => {
+  const analyse = { details: [{ libelle: 'Diplôme exigé', points: -15 }, { libelle: 'Poste de niveau junior', points: 10 }] };
+  assert.equal(preparerScore([], '2026-10-28', [], [], () => null)(offre({ analyse })).exigences, -5);
+  assert.equal(preparerScore([], '2026-10-28', [], [], () => null, () => null, { mode: 'alternance' })(offre({ analyse })).exigences, 10);
+  assert.equal(preparerScore([], '2026-10-28', [], [], () => null, () => null, { mode: 'stage' })(offre({ analyse })).exigences, 10);
 });

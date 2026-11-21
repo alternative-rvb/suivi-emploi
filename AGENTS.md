@@ -23,7 +23,7 @@ Application locale de suivi des offres d'emploi et des candidatures. Node 24 (mo
 
 ## Ce qu'il faut demander à l'utilisateur, jamais deviner
 
-- **Sa zone** (`SUIVI_DEPARTEMENT_PROCHE`, `SUIVI_VILLES_PROCHES`, éventuellement `SUIVI_ORIGINES` en latitude,longitude) : lui poser la question, ne pas inventer une région ni copier les exemples de `.env.example`.
+- **Sa zone** (département et villes proches, éventuellement des points de départ en latitude,longitude) : lui poser la question, ne pas inventer une région ni copier les exemples de `.env.example`. Elle se saisit dans Profil > Trajets et revenu, bloc « Zone de recherche », ou par `PUT /api/zone` serveur lancé.
 - **Ses clés d'API** (`FT_CLIENT_ID`, `FT_CLIENT_SECRET` de francetravail.io, clés Google Agenda, `ANALYSE_CLE`) : il les crée lui-même et les écrit lui-même dans `.env`. Ne jamais lui demander de les coller dans le chat, ne jamais les lire, les afficher ni les passer en argument de commande. Une fois qu'il confirme, vérifier seulement la présence du nom de la variable, jamais sa valeur.
 - **Les options facultatives** (candidatures spontanées, marché local, Google Agenda, analyse par un modèle) : les proposer, ne pas les activer d'office. Chaque variable est commentée dans `.env.example`, le détail est dans `docs/reference.md`.
 - **L'analyse des annonces par un modèle** envoie les annonces et le profil au modèle : ne la pointer que vers une adresse locale (Ollama) sauf décision explicite de l'utilisateur.

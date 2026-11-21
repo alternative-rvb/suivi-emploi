@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { cleMemoire } from './profil.ts';
 
 export function fmtDate(iso) {
   if (!iso) return '';
@@ -57,8 +58,8 @@ export const ecranLarge = () => window.matchMedia('(min-width: 961px)').matches;
 // ANCHOR: état mémorisé dans le navigateur (filtres, élément ouvert) pour retrouver chaque onglet tel qu'on l'a laissé
 export function useMemoire(cle, defaut) {
   const [v, setV] = useState(() => {
-    try { const s = localStorage.getItem('suivi.' + cle); return s === null ? defaut : JSON.parse(s); } catch { return defaut; }
+    try { const s = localStorage.getItem(cleMemoire(cle)); return s === null ? defaut : JSON.parse(s); } catch { return defaut; }
   });
-  useEffect(() => { try { localStorage.setItem('suivi.' + cle, JSON.stringify(v)); } catch { /* stockage indisponible : rien à mémoriser */ } }, [cle, v]);
+  useEffect(() => { try { localStorage.setItem(cleMemoire(cle), JSON.stringify(v)); } catch { /* stockage indisponible : rien à mémoriser */ } }, [cle, v]);
   return [v, setV];
 }

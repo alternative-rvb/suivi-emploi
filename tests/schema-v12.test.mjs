@@ -55,9 +55,10 @@ test('schéma v12 : tables reconstruites, valeurs invalides ramenées, liens vid
     assert.deepEqual(db.prepare('SELECT id_offre FROM analyses').all().map(r => r.id_offre), ['o1']);
     // contraintes et index
     assert.throws(() => db.prepare("INSERT INTO candidatures (id, statut) VALUES ('c9', 'nimporte')").run(), /CHECK/);
-    assert.throws(() => db.prepare("INSERT INTO offres (id_offre, titre, categorie) VALUES ('o9', 't', 'x')").run(), /CHECK/);
+    // NOTE: plus de CHECK sur offres.categorie depuis la v33 (catalogue de métiers contrôlé par le serveur)
+    assert.doesNotThrow(() => db.prepare("INSERT INTO offres (id_offre, titre, categorie) VALUES ('o9', 't', 'x')").run());
     assert.throws(() => db.prepare("INSERT INTO taches (id, candidature_id, titre) VALUES ('t9', 'fantome', 'x')").run(), /FOREIGN KEY/);
-    assert.throws(() => db.prepare("INSERT INTO analyses VALUES ('absente', 1, 'h', 'p', 'm', 'd', 1, '{}')").run(), /FOREIGN KEY/);
+    assert.throws(() => db.prepare("INSERT INTO analyses (id_offre, version, hash, provider, modele, date, duree_ms, reponses) VALUES ('absente', 1, 'h', 'p', 'm', 'd', 1, '{}')").run(), /FOREIGN KEY/);
     const index = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all().map(r => String(r.name)));
     for (const i of ['taches_candidature', 'echanges_candidature', 'candidatures_offre', 'offres_date']) assert.ok(index.has(i), i);
     // cascades : supprimer une candidature emporte ses tâches et échanges, une offre libère la candidature et le CV

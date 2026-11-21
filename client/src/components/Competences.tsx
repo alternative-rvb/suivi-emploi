@@ -6,7 +6,7 @@ import { avecCompetence } from '../competences.ts';
 import Select from './Select.tsx';
 import Suggestions from './Suggestions.tsx';
 import { POIDS_MAX } from '../../../lib/cv.mjs';
-import { METIERS_CV } from '../../../lib/listes.mjs';
+import { useMetiers } from '../metiers.ts';
 import { CATEGORIES } from '../constants.ts';
 
 const NIVEAUX = [null, 0, 1, 2, 3, 4, 5];
@@ -26,6 +26,7 @@ function resumeIa(liste: { nom: string; ia: string }[]) {
 }
 
 export default function Competences({ competences, projets, maj, cible = '', cibleLue = () => {} }) {
+  const { affiches: metiers } = useMetiers();
   const [q, setQ] = useState('');
   // NOTE: arrivée depuis une étiquette du Parcours : la recherche est remplie avec la compétence, filtres remis à zéro
   useEffect(() => {
@@ -121,6 +122,7 @@ export default function Competences({ competences, projets, maj, cible = '', cib
         { cle: 'niveau', libelle: 'Sans niveau', couleur: 'var(--c-red)', nombre: nbSansNiveau },
       ]} />
       <div className="table-wrap" style={{ marginTop: 12 }}>
+        {/* NOTE: lignes en fiches (nom, niveaux et poids en haut, projets dessous, contexte sur toute la largeur) : les six colonnes étaient trop serrées dans la colonne du Profil */}
         <table className="table table-comp">
           <thead><tr><th>Compétence</th><th title="Capacité à enseigner">Enseigner</th><th title="Capacité à exécuter">Exécuter</th><th title="Nombre de projets du portfolio qui mobilisent la compétence">Projets</th><th title="Poids de 0 à 3 par métier, pour un CV de métier ou sur mesure (pas le CV général) : 3 en tête et protégée du plafond, 0 masquée (sauf si l'offre la demande). Vide : vaut 2, le niveau départage.">Poids</th><th>Contexte</th></tr></thead>
           <tbody>
@@ -167,7 +169,7 @@ export default function Competences({ competences, projets, maj, cible = '', cib
                   <td>
                     <span className="niveau-lib">Poids</span>
                     <div className="comp-poids">
-                      {METIERS_CV.map(m => (
+                      {metiers.map(m => (
                         <label key={m} className="comp-poids-metier" title={CATEGORIES[m]?.label ?? m}>
                           <span>{CATEGORIES[m]?.label ?? m}</span>
                           <select className="input poids-select" value={s.poids?.[m] ?? ''} onChange={e => peser(s.id, m, e.target.value)} aria-label={`Poids pour ${CATEGORIES[m]?.label ?? m} : ${s.competence}`}>
@@ -179,6 +181,7 @@ export default function Competences({ competences, projets, maj, cible = '', cib
                     </div>
                   </td>
                   <td className="note-cell">
+                    <span className="niveau-lib">Contexte</span>
                     <textarea className="input input-nu" rows={2} defaultValue={s.note} aria-label={`Contexte de ${s.competence}`} placeholder="Contexte, remarque..."
                       onBlur={e => { if (e.target.value !== s.note) modifier(s.id, 'note', e.target.value); }} />
                   </td>

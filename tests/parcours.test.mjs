@@ -1,6 +1,7 @@
 // Tests du parcours du Profil (ligne 88) : migration v7, années par métier, note des offres, lecture de l'export LinkedIn, routes du serveur.
 // Le serveur est lancé sur une copie dans un dossier temporaire, sans .env (aucun appel réseau, la synchro échoue en configuration).
 import test from 'node:test';
+import { brancherProfils } from '../lib/profils.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,6 +23,7 @@ test('migration v7 : compétences et titres du kv passent dans leurs tables, ids
     ouvrirBase(chemin).close();
     // NOTE: base remise à l'état v6, avec les anciennes clés kv
     const brute = new DatabaseSync(chemin);
+    brancherProfils(brute);
     const skills = [
       { id: 'c1', domaine: 'Comptabilité', competence: 'Saisie', enseigner: 5, executer: 4, note: '' },
       { id: 'c2', domaine: 'Langues', competence: 'Anglais', enseigner: null, executer: 3, note: 'B2', valide: true },
@@ -81,6 +83,7 @@ test('migration v9 : matières rattachées aux compétences, reste conservé, co
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const brute = new DatabaseSync(chemin);
+    brancherProfils(brute);
     brute.exec("INSERT INTO competences (id, competence) VALUES ('c1', 'Paie'), ('c2', 'Saisie comptable')");
     brute.exec("INSERT INTO formations (id, type, titre, matieres) VALUES ('t1', 'titre_pro', 'Titre pro ProjetX', 'Paie, Saisie, Fiscalité'), ('t2', 'titre_pro', 'Autre', '')");
     brute.exec('DELETE FROM formation_competences; PRAGMA user_version = 8');
@@ -285,6 +288,7 @@ test('migration v10 : annees devient debut et fin, la précision va dans l organ
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const brute = new DatabaseSync(chemin);
+    brancherProfils(brute);
     brute.exec('ALTER TABLE formations DROP COLUMN debut; ALTER TABLE formations DROP COLUMN fin');
     brute.exec("ALTER TABLE formations ADD COLUMN annees TEXT NOT NULL DEFAULT ''");
     const ins = brute.prepare('INSERT INTO formations (id, type, titre, etablissement, annees, note) VALUES (?, ?, ?, ?, ?, ?)');

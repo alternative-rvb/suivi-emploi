@@ -1,6 +1,6 @@
 import { Pencil, SlidersHorizontal } from 'lucide-react';
 import { useMemo } from 'react';
-import { METIERS_CV } from '../../../lib/listes.mjs';
+import { useMetiers } from '../metiers.ts';
 import { clePuce, normaliserPoids, POIDS_MAX, poidsSuggere, puces } from '../../../lib/cv.mjs';
 import { CATEGORIES } from '../constants.ts';
 import BlocRepliable from './BlocRepliable.tsx';
@@ -11,17 +11,18 @@ const lignesDe = (description: string) => [...new Map(puces(description).map(p =
 
 // ANCHOR: grille puces × métiers d'une expérience, valeurs grises = suggestions tirées des mots du métier
 function GrillePoids({ lignes, poids, onChange }: { lignes: string[]; poids: Record<string, Record<string, number>>; onChange: (p: Record<string, Record<string, number>>) => void }) {
+  const { affiches: metiers } = useMetiers();
   return (
     <>
       <div className="poids-grille" role="table" aria-label="Poids des puces par métier">
         <div className="poids-ligne poids-entete" role="row">
           <span role="columnheader">Puce</span>
-          {METIERS_CV.map(m => <span key={m} role="columnheader">{CATEGORIES[m]?.label ?? m}</span>)}
+          {metiers.map(m => <span key={m} role="columnheader">{CATEGORIES[m]?.label ?? m}</span>)}
         </div>
         {lignes.map(p => (
           <div key={clePuce(p)} className="poids-ligne" role="row">
             <span className="poids-puce" role="cell" title={p}>{p}</span>
-            {METIERS_CV.map(m => {
+            {metiers.map(m => {
               const saisi = poids?.[clePuce(p)]?.[m];
               return (
                 <select key={m} className={`input poids-select${saisi === undefined ? ' poids-suggere' : ''}`} value={saisi ?? poidsSuggere(p, m)}
@@ -34,7 +35,7 @@ function GrillePoids({ lignes, poids, onChange }: { lignes: string[]; poids: Rec
           </div>
         ))}
       </div>
-      <button type="button" className="btn btn-ghost small" onClick={() => onChange(Object.fromEntries(lignes.map(p => [clePuce(p), Object.fromEntries(METIERS_CV.map(m => [m, poids?.[clePuce(p)]?.[m] ?? poidsSuggere(p, m)]))])))}>Enregistrer les suggestions</button>
+      <button type="button" className="btn btn-ghost small" onClick={() => onChange(Object.fromEntries(lignes.map(p => [clePuce(p), Object.fromEntries(metiers.map(m => [m, poids?.[clePuce(p)]?.[m] ?? poidsSuggere(p, m)]))])))}>Enregistrer les suggestions</button>
     </>
   );
 }

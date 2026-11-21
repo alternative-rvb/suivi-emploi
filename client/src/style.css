@@ -329,7 +329,7 @@ select.input option { background: var(--surface); color: var(--ink); }
 .input.comp-nom { width: 100%; resize: none; field-sizing: content; min-height: 0; line-height: 1.35; overflow: hidden; }
 .comp-domaine { font: inherit; font-size: 0.72rem; color: var(--ink-3); background: transparent; border: 1px solid var(--line-2); border-radius: 8px; padding: 2px 6px; max-width: 100%; margin-top: 2px; opacity: 0; }
 tr:hover .comp-domaine, tr:focus-within .comp-domaine { opacity: 1; }
-.input.input-nu.input-domaine { width: auto; margin-left: -8px; display: inline-block; font-weight: 650; color: var(--accent); font-size: 0.8rem; }
+.input.input-nu.input-domaine { width: auto; max-width: calc(100% + 8px); margin-left: -8px; display: inline-block; font-weight: 650; color: var(--accent); font-size: 0.8rem; }
 .alerte-comp { display: flex; align-items: center; gap: 8px; margin: 8px 0; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.9rem; color: var(--ink); background: color-mix(in oklab, var(--c-amber) 12%, var(--surface)); border: 1px solid color-mix(in oklab, var(--c-amber) 40%, transparent); }
 .alerte-comp svg { color: var(--c-amber); flex: none; }
 .alerte-comp.ok { background: color-mix(in oklab, var(--c-green) 10%, var(--surface)); border-color: color-mix(in oklab, var(--c-green) 35%, transparent); }
@@ -507,6 +507,8 @@ button.resume-item:hover { border-color: var(--accent); }
 }
 /* NOTE: squelette d'un bloc repliable fermé, même hauteur que son summary */
 .sq-hauteur { display: grid; }
+/* NOTE: prénom de l'onglet Profil borné à 12 caractères (ch), coupé par des points de suspension pour ne pas élargir la barre */
+.tab-prenom { display: inline-block; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .bloc-rep-sq { display: flex; align-items: center; padding: 11px 14px; min-height: 44px; box-sizing: border-box; }
 
 @media (max-width: 960px) {
@@ -596,8 +598,21 @@ button.resume-item:hover { border-color: var(--c); background: color-mix(in okla
 .veille-listes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start; }
 /* ANCHOR: réglages de recherche de l'Admin en cartes pleine largeur repliables, pastille de couleur du champ devant le titre */
 .reglages-listes { display: grid; gap: 10px; }
+/* ANCHOR: métiers recherchés (ligne 260) : liste ordonnée du profil, flèches pour changer le rang */
+.metiers-liste { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 4px; max-width: 520px; }
+.metiers-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.metiers-nom { flex: 1 1 9rem; min-width: 0; font-weight: 600; }
+/* ANCHOR: métier créé par le profil (ligne 266) : formulaire pleine largeur sous sa ligne ou en bas du bloc, confirmation de suppression dans la ligne */
+.metiers-confirme { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.metier-form { flex-basis: 100%; display: grid; gap: 10px; margin: 8px 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; max-width: 640px; }
+.metier-form-ligne { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.metier-exemples { margin: 4px 0 0; padding-left: 18px; }
 .reglage-liste > summary::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
 .reglage-liste .ajout-groupe { max-width: 520px; }
+/* ANCHOR: type de recherche et malus de contrat (ReglagesRecherche) */
+.reglages-score { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+.reglages-score .field { min-width: 0; }
+.reglages-score .input { width: 9rem; }
 .mots { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .mots .badge { font-weight: 550; }
 
@@ -763,7 +778,7 @@ form .btn.small, form .input.cell, form .select-bouton { min-height: var(--h-ctr
 .action::before { top: 50%; transform: translateY(-50%); }
 .action { padding-block: 12px; }
 .filtres { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.chips-compact { gap: 6px; }
+.chips-compact { gap: 10px 8px; }
 .chips-compact .chip { min-height: var(--h-chip); padding: 0 9px; font-size: 0.8rem; }
 .chips-compact .chip { gap: 8px; }
 .chips-compact .chip .count { padding: 1px 7px; margin-left: 2px; }
@@ -833,8 +848,19 @@ form .btn.small, form .input.cell, form .select-bouton { min-height: var(--h-ctr
 .trajets-liste { display: grid; gap: 8px; }
 .trajets-adresse { display: grid; gap: 2px; min-width: 0; }
 .trajets-ligne { display: grid; grid-template-columns: minmax(120px, 0.7fr) 1.6fr auto; gap: 8px; align-items: start; }
-.trajets-cout { display: flex; align-items: center; gap: 8px; flex-direction: row; }
-.trajets-cout .input { width: 90px; }
+.trajets-ligne .btn.icon { margin-top: 22px; }
+/* NOTE: champs de Trajets et revenu et de la zone : libellé au-dessus, grille qui passe à une colonne sur téléphone */
+.trajets-champs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 12px 16px; align-items: end; }
+.trajets-carte, .zone-carte { display: grid; gap: 12px; }
+.trajets-carte .carte-titre, .zone-carte .carte-titre, .trajets-carte .admin-sous-titre, .zone-carte .admin-sous-titre, .trajets-carte p, .zone-carte p { margin: 0; }
+.trajets-carte .admin-sous-titre, .zone-carte .admin-sous-titre { margin-top: 6px; }
+.zone-liste { display: grid; gap: 8px; }
+.zone-liste-titre { font-size: .84rem; font-weight: 600; }
+.trajets-carte .carte-leaflet.carte-zone-carte { height: min(50vh, 420px); }
+@media (max-width: 560px) {
+  .trajets-ligne { grid-template-columns: minmax(0, 1fr) auto; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .trajets-ligne > .field:first-child { grid-column: 1 / -1; }
+}
 
 /* ANCHOR: états repliés en un résumé d'une ligne (liste des offres) */
 .etats-repli { --e: var(--ink-3); border: 1px solid color-mix(in oklab, var(--e) 35%, var(--line)); border-radius: var(--radius-sm); margin: 0 0 12px; background: var(--surface); }
@@ -1520,15 +1546,47 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 .comp-ia { font-size: 0.72rem; font-weight: 600; color: var(--ink-3); }
 .comp-ia b { color: var(--ink); font-size: 0.9rem; }
 /* ANCHOR: tableau des compétences compact : colonnes à largeur fixe, niveaux étroits, domaine superposé au survol au lieu de réserver une ligne */
-.table-comp { table-layout: fixed; width: 100%; }
-.table-comp th:nth-child(1) { width: 26%; }
-.table-comp th:nth-child(2), .table-comp th:nth-child(3) { width: 78px; }
-.table-comp th:nth-child(4) { width: 30%; }
-.table-comp td { vertical-align: top; padding-top: 8px; padding-bottom: 8px; }
-.table-comp td:first-child { position: relative; }
-.table-comp .comp-domaine { position: absolute; right: 6px; bottom: 4px; width: 60%; margin: 0; background: var(--surface); }
+/* ANCHOR: compétences du Profil en fiches : nom, niveaux et poids en haut, projets dessous, contexte sur toute la largeur ; une seule colonne sous 760 px */
+.table-comp, .table-comp tbody { display: block; width: 100%; }
+.table-comp thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.table-comp tr:not(.group) { display: grid; grid-template-columns: minmax(0, 1fr) 78px 78px minmax(220px, 300px); grid-template-areas: "nom ens exe poids" "projets projets projets poids" "contexte contexte contexte contexte"; gap: 10px 18px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.table-comp tr.group { display: block; }
+.table-comp tr.group td { display: block; }
+.table-comp tr:not(.group) > td { display: block; padding: 0; border: 0; min-width: 0; }
+.table-comp tr:not(.group) > td:nth-child(1) { grid-area: nom; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; align-self: start; }
+.table-comp tr:not(.group) > td:nth-child(2) { grid-area: ens; }
+.table-comp tr:not(.group) > td:nth-child(3) { grid-area: exe; }
+.table-comp tr:not(.group) > td:nth-child(4) { grid-area: projets; }
+.table-comp tr:not(.group) > td:nth-child(5) { grid-area: poids; }
+.table-comp tr:not(.group) > td:nth-child(6) { grid-area: contexte; }
+.table-comp tr:not(.group) > td:only-child { grid-column: 1 / -1; grid-area: auto; }
+.table-comp .alerte-ligne, .table-comp .comp-nom { flex-basis: 100%; }
+.table-comp .comp-nom { font-weight: 600; font-size: 0.95rem; }
+.table-comp .comp-domaine { flex: 1 1 10rem; max-width: 18rem; margin: 0; background: var(--surface); }
+.table-comp .comp-suppr { margin-top: 0; margin-left: auto; }
+.table-comp tr:has(.alerte-ligne) { box-shadow: inset 3px 0 0 var(--c-amber); }
+.table .table-comp tr:has(.alerte-ligne) > td:first-child, .table-comp tr:has(.alerte-ligne) > td:first-child { box-shadow: none; }
 .table-comp .note-cell { max-width: none; min-width: 0; }
-.table-comp .note-cell textarea { min-height: 3.4em; }
+.table-comp .note-cell textarea { width: 100%; min-height: 2.6em; field-sizing: content; resize: vertical; }
+@media (max-width: 760px) {
+  .table-comp tr:not(.group) { grid-template-columns: 1fr 1fr; grid-template-areas: "nom nom" "ens exe" "poids poids" "projets projets" "contexte contexte"; }
+}
+
+/* ANCHOR: diplômes et titres enseignés en fiches : intitulé en tête, champs libellés (data-label) qui passent à la ligne selon la largeur, suppression en haut à droite */
+.table-fiches, .table-fiches tbody { display: block; width: 100%; }
+.table-fiches thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.table-fiches tr { position: relative; display: grid; grid-template-columns: repeat(var(--fiche-cols, 3), minmax(0, 1fr)); gap: 12px 18px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.table-fiches tr:last-child { border-bottom: 0; }
+.table-fiches td { display: block; padding: 0; border: 0; min-width: 0; }
+.table-fiches td.fiche-titre { grid-column: 1 / -1; padding-right: 44px; font-size: 0.98rem; }
+.table-fiches td.fiche-large { grid-column: 1 / -1; }
+.table-fiches td.fiche-actions { position: absolute; top: 10px; right: 10px; }
+.table-fiches td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 4px; font-size: 0.68rem; font-weight: 600; color: var(--ink-3); }
+.table-fiches td > .input.cell, .table-fiches td > .select, .table-fiches td .select-bouton { width: 100%; }
+.table-fiches td:only-child { grid-column: 1 / -1; }
+/* NOTE: une colonne par champ (--fiche-cols posé par Formations.tsx), deux sur tablette, une sur téléphone */
+@media (max-width: 1100px) { .table-fiches tr { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .table-fiches tr { grid-template-columns: minmax(0, 1fr); } }
 
 /* ANCHOR: qualifications d'une annonce (CompetencesOffre) : coches vertes pour le Profil, cartes ✓ ✗ pour le reste */
 .qualifs { margin: 14px 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
@@ -1588,11 +1646,13 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 .split-detail .fiche > .fiche-actions { justify-content: center; position: sticky; bottom: 0; z-index: 5; margin: 0 -22px -21px; padding: 12px 22px; background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius); }
 
 /* ANCHOR: filtres secondaires repliés (zone, tri, affichage) pour laisser de la place à la liste */
-.filtres-repli { display: grid; gap: 8px; }
+.filtres-repli { display: grid; gap: 14px; }
+.filtres-repli > .filtres { margin-top: 0; }
+.filtres-repli > .filtres + .chips { margin-top: 14px; }
 .filtres-repli > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: var(--h-chip); font-size: 0.84rem; font-weight: 550; color: var(--ink-2); }
 .filtres-repli > summary::-webkit-details-marker { display: none; }
 .filtres-repli > summary .count { font-size: 0.75rem; color: var(--accent); font-weight: 650; }
-.filtres-repli[open] > summary { margin-bottom: 8px; }
+.filtres-repli[open] > summary { margin-bottom: 4px; }
 
 /* ANCHOR: épingle d'une offre (14 jours) : marque-page en haut à droite de la carte, discret tant qu'il n'est pas actif */
 .row-li { position: relative; }
@@ -1745,6 +1805,10 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
   .topbar-inner.sqz .sq-top-fin { margin-left: auto; }
   .topbar-inner.sqz .sq-top-onglets { order: 3; flex-basis: 100%; justify-content: flex-start; overflow: hidden; }
 }
+/* NOTE: mêmes changements que la vraie barre : sous-titre masqué sur une ligne, sélecteur de profil réduit à sa pastille et prénom plus court sur téléphone, logo seul sous 480 px */
+@media (min-width: 1241px) { .topbar-inner.sqz .sq-top-sous { display: none; } }
+@media (max-width: 640px) { .topbar-inner.sqz .sq-top-profil { width: 36px !important; } .topbar-inner.sqz .sq-top-prenom { width: 70px !important; } }
+@media (max-width: 480px) { .topbar-inner.sqz .sq-top-marque { display: none; } }
 
 /* ANCHOR: Profil > Modèles CV et lettre > Lettre (bibliothèque de style) */
 .modeles-lettre { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
@@ -1882,3 +1946,43 @@ path.serie-taches, .pastille.serie-taches { fill: var(--serie-taches); backgroun
 .aide-corps p, .aide-corps li { margin: 0; }
 .aide-corps ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
 .aide-corps h3.carte-titre { font-size: var(--fs-md, 1rem); padding-bottom: 4px; }
+
+/* ANCHOR: sélecteur de profil (ligne 263) : bouton de la barre du haut et fenêtre de gestion */
+.profil-bouton { display: inline-flex; align-items: center; gap: 6px; max-width: 16rem; }
+.profil-bouton-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profil-pastille { flex: none; width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--line-2); background: transparent; }
+.profil-pastille.profil-bleu { background: var(--c-blue); border-color: var(--c-blue); }
+.profil-pastille.profil-vert { background: var(--c-green); border-color: var(--c-green); }
+.profil-pastille.profil-orange { background: var(--c-orange); border-color: var(--c-orange); }
+.profil-pastille.profil-violet { background: var(--c-violet); border-color: var(--c-violet); }
+.profil-pastille.profil-rouge { background: var(--c-red); border-color: var(--c-red); }
+.profil-pastille.profil-gris { background: var(--c-grey); border-color: var(--c-grey); }
+.profils-dialog { width: min(34rem, calc(100vw - 32px)); }
+.profils-liste { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.profils-ligne { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 6px; border-radius: var(--radius-sm); border: 1px solid transparent; }
+.profils-ligne.on { border-color: var(--line-2); background: var(--surface-2, transparent); }
+.profils-choix { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; background: none; border: 0; padding: 6px 4px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.profils-choix[aria-current] { cursor: default; font-weight: 600; }
+.profils-edition, .profils-confirmation { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.profils-edition .input { flex: 1; min-width: 10rem; }
+.profils-nouveau { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.profils-nouveau .btn { justify-self: start; width: auto; }
+.profils-dialog .dialog-head h2 { display: flex; align-items: center; gap: 8px; }
+.profil-couleurs { display: flex; gap: 4px; flex-wrap: wrap; }
+.profil-couleur { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid transparent; background: none; cursor: pointer; }
+.profil-couleur.on { border-color: var(--ink-3); }
+.profil-couleur .profil-pastille { width: 14px; height: 14px; }
+/* NOTE: barre sur une ligne (plus de 1240 px, largeur plafonnée à 1320) : pastille seule, nom dans l'infobulle, et sous-titre de la marque masqué sur une ligne (plus de place avec le nom du profil et le prénom) pour que la barre garde sa hauteur de 69 px (--haut-collant) ; barre sur deux lignes : nom affiché, masqué sur téléphone */
+@media (min-width: 1241px) { .brand-sous { display: none; } }
+/* NOTE: barre sur une ligne : le nom du profil et le prénom restent affichés (12 caractères au plus), le sélecteur perd son icône et Admin ne garde que la sienne (libellé conservé pour les lecteurs d'écran), pour laisser la place au titre de la marque */
+@media (min-width: 1241px) { .profil-bouton > svg { display: none; } .profil-bouton-nom { max-width: 12ch; } .tab-admin .tab-libelle { display: none; } .tab { padding-inline: 10px; } }
+/* NOTE: entre 1241 et 1359 px, les icônes des onglets sont masquées (même principe que sur téléphone) : sans elles, la marque, les sept onglets, le sélecteur, le prénom et Admin tiennent sur une ligne */
+@media (min-width: 1241px) and (max-width: 1359px) { .tab:not(.tab-admin) > svg { display: none; } .tab { gap: 0; } }
+@media (max-width: 640px) { .profil-bouton-nom { display: none; } .tab-prenom { max-width: 8ch; } .tab-admin .tab-libelle { display: none; } .tab-admin { padding-inline: 10px; } .tab-admin > svg { display: block; } .topbar-end { gap: 6px; } }
+/* NOTE: sous 480 px, la barre garde le logo seul : le titre de la marque n'a plus la place et passait sous le sélecteur de profil */
+@media (max-width: 480px) { .brand-titre { display: none; } }
+
+/* ANCHOR: textes longs du Parcours (résumé, missions) : le champ suit la longueur du texte (field-sizing), entre six lignes et 70 % de l'écran */
+.input.texte-long { field-sizing: content; min-height: 9.5em; max-height: 70vh; resize: vertical; line-height: 1.5; }
+/* NOTE: titres de section de Recherche d'offres, collés au bloc qui suit (la grille .admin espace déjà de 16 px) */
+.admin > .reglages-section { margin: 6px 0 -8px; }

@@ -17,7 +17,9 @@ const jour = decalage => {
 
 function baseTest(extra = []) {
   const db = ouvrirBase(':memory:');
-  const ins = db.prepare("INSERT INTO offres (id_offre, titre, categorie, departement, source, date_detection, epinglee_le) VALUES (?, ?, 'comptabilite', '83', ?, ?, ?)");
+  const offre = db.prepare("INSERT INTO offres (id_offre, titre, categorie, departement, source, date_detection) VALUES (?, ?, 'comptabilite', '83', ?, ?)");
+  const suivi = db.prepare('INSERT INTO offre_suivis (id_offre, epinglee_le) VALUES (?, ?)');
+  const ins = { run: (id, titre, source, date, epingle) => { offre.run(id, titre, source, date); suivi.run(id, epingle); } };
   ins.run('en-ligne', 'Comptable en ligne', 'France Travail', jour(-3), '');
   ins.run('disparue', 'Comptable disparue', 'France Travail', jour(-3), '');
   ins.run('epinglee', 'Comptable épinglée', 'France Travail', jour(-3), jour(-1));

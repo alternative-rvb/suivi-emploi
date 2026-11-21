@@ -1,5 +1,6 @@
 // Tests de la matrice de poids des puces par métier : normalisation, tri, composition, routes et migration v24 (données fictives, sans réseau)
 import test from 'node:test';
+import { brancherProfils } from '../lib/profils.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -209,6 +210,7 @@ test('migration v24 : colonne ajoutée avec sauvegarde, données gardées, poids
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const ancienne = new DatabaseSync(chemin);
+    brancherProfils(ancienne);
     ancienne.exec("INSERT INTO experiences (id, poste, employeur, description) VALUES ('x1', 'Poste', 'ClientABC', 'Une phrase')");
     ancienne.exec('ALTER TABLE experiences DROP COLUMN poids; PRAGMA user_version = 23');
     ancienne.close();
@@ -235,6 +237,7 @@ test('migration v26 : clés des lettres génériques angle:<métier> renommées 
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const ancienne = new DatabaseSync(chemin);
+    brancherProfils(ancienne);
     ancienne.exec("INSERT INTO lettre_brouillons (cle, texte, maj_le) VALUES ('angle:comptabilite', 'Texte A', '2026-01-01'), ('angle:dev_web', 'Texte B', '2026-01-01'), ('man-1', 'Texte C', '2026-01-01')");
     ancienne.exec('PRAGMA user_version = 25');
     ancienne.close();
@@ -258,6 +261,7 @@ test('migration v26 : une clé metier: déjà présente est gardée, l\'ancienne
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const ancienne = new DatabaseSync(chemin);
+    brancherProfils(ancienne);
     ancienne.exec("INSERT INTO lettre_brouillons (cle, texte, maj_le) VALUES ('angle:dev_web', 'Ancien', '2026-01-01'), ('metier:dev_web', 'Récent', '2026-02-01')");
     ancienne.exec('PRAGMA user_version = 25');
     ancienne.close();
@@ -286,6 +290,7 @@ test('migration v30 : origine des lettres renommée, textes intacts, sauvegarde 
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const ancienne = new DatabaseSync(chemin);
+    brancherProfils(ancienne);
     ancienne.exec("INSERT INTO lettre_brouillons (cle, texte, origine, maj_le) VALUES ('man-1', 'Texte A', 'ancien-prenom', '2026-01-01'), ('man-2', 'Texte B', 'claude', '2026-01-01')");
     ancienne.exec('PRAGMA user_version = 29');
     ancienne.close();

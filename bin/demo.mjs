@@ -5,7 +5,8 @@ import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ouvrirBase } from '../lib/offres.mjs';
+import { ouvrirBase, recalculerProches } from '../lib/offres.mjs';
+import { avecProfil, creerProfil, ecrireReglageProfil, modifierProfil, profilDefaut } from '../lib/profils.mjs';
 
 // NOTE: la commande est dans bin/ ; le serveur, lib/ et dist/ sont à la racine du projet
 const racine = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,7 +28,10 @@ symlinkSync(join(racine, 'node_modules'), join(dir, 'node_modules'));
 // ANCHOR: données fictives, dates relatives à aujourd'hui pour que la démo paraisse toujours récente ; tout est inventé
 const jour = n => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 const db = ouvrirBase(join(dir, 'suivi.db'));
-const offre = db.prepare('INSERT INTO offres (id_offre, titre, entreprise, lieu, departement, ville, proche, contrat, salaire, lien, date_detection, categorie, epinglee_le, annonce) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+const ajout = db.prepare('INSERT INTO offres (id_offre, titre, entreprise, lieu, departement, ville, contrat, salaire, lien, date_detection, categorie, annonce) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+// NOTE: chaque offre est suivie par le profil par défaut (offre_suivis), la zone « proche » est recalculée plus bas d'après la zone du profil
+const suivre = db.prepare('INSERT INTO offre_suivis (id_offre, epinglee_le) VALUES (?, ?)');
+const offre = { run: (id, titre, entreprise, lieu, dep, ville, _proche, contrat, salaire, lien, date, cat, epingle, annonce) => { ajout.run(id, titre, entreprise, lieu, dep, ville, contrat, salaire, lien, date, cat, annonce); suivre.run(id, epingle); } };
 const ANNONCE = 'Dans une équipe de cinq personnes, vous concevez et maintenez des applications web. Compétences attendues : JavaScript, React, SQL, tests automatisés. Poste en CDI, télétravail partiel.';
 [
   ['d1', 'Développeur web React', 'Studio Alizé', '44 - Nantes', '44', 'Nantes', 1, 'CDI', '38 000 à 45 000 euros par an', 'https://example.com/offre/d1', jour(-1), 'dev_web', new Date().toISOString(), ANNONCE],
@@ -65,14 +69,36 @@ const comp = db.prepare('INSERT INTO competences (id, domaine, competence, ensei
   .forEach(([id, d, c, e, x], i) => comp.run(id, d, c, e, x, i + 1));
 db.prepare('INSERT INTO contacts (id, prenom, nom, fonction, entreprise, email, note, cree) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
   .run('p1', 'Camille', 'Exemple', 'Responsable du recrutement', 'Agence Pixelor', 'camille@example.com', 'Contact de la candidature d\'intégrateur web.', jour(-5));
+
+// ANCHOR: deux profils fictifs sur les mêmes offres : le profil par défaut (emploi, données ci-dessus) et un profil alternance avec ses propres candidatures, réglages et offres suivies
+// NOTE: zone fictive (Nantes et alentours) enregistrée dans chaque profil, aucune variable de zone dans l'environnement du serveur
+const ZONE = { departement_proche: '44', villes_proches: ['Nantes', 'Saint-Herblain'], origines: ['47.2184,-1.5536'], departements_distance: [], lieu_bonus: '' };
+modifierProfil(db, profilDefaut(db), { nom: 'Démo emploi', couleur: 'bleu' });
+ecrireReglageProfil(db, 'zone', ZONE);
+// NOTE: métiers du profil (ligne 260) : les quatre de la démo, dans l'ordre de leur poids dans le score
+ecrireReglageProfil(db, 'metiers', ['formateur_digital', 'web_design', 'dev_web', 'comptabilite']);
+recalculerProches(db);
+const alternance = /** @type {{ id: string }} */ (creerProfil(db, { nom: 'Démo alternance', couleur: 'vert' }));
+avecProfil(alternance.id, () => {
+  ecrireReglageProfil(db, 'reglages', { zones: ['44'], mots_cles: ['alternance développeur', 'apprenti web'], mots_exclus: [], contrats_exclus: [], entreprises: [], mode: 'alternance' });
+  ecrireReglageProfil(db, 'zone', { ...ZONE, villes_proches: ['Nantes'] });
+  // NOTE: un métier créé (ligne 266) : les offres d'intégrateur passent avant le développement web pour ce profil
+  ecrireReglageProfil(db, 'metiers_perso', [{ cle: 'perso_demo01', libelle: 'Intégration web', titre: 'Intégrateur web', mots: ['integrat'], exclus: [], rome: 'M1805', couleur: 'orange' }]);
+  ecrireReglageProfil(db, 'metiers', ['perso_demo01', 'dev_web', 'web_design', 'marketing_digital']);
+  for (const id of ['d1', 'd3', 'd8']) suivre.run(id, '');
+  recalculerProches(db);
+  cand.run('a1', 'Studio Alizé', 'Développeur web en alternance', 'en_cours', jour(-3), 'Site de l\'entreprise', 'fort', 'Rythme proposé : trois semaines en entreprise, une en formation.', 'd1');
+  tache.run('ta1', 'a1', 'Envoyer le calendrier de l\'école', jour(3), 0, jour(-3));
+  comp.run('ka1', 'Développement web', 'HTML et CSS', 1, 3, 1);
+});
 // NOTE: la dernière synchro est déclarée récente pour que le serveur ne cherche pas à joindre France Travail
 db.prepare('INSERT INTO kv (cle, valeur) VALUES (?, ?)').run('synchro_derniere', JSON.stringify({ ok: true, date: new Date().toISOString(), declencheur: 'demo', nouvelles: 0 }));
 db.close();
 
-// ANCHOR: serveur de démonstration : environnement vidé (aucune clé lue), zone « proche » fictive, aucune synchronisation
+// ANCHOR: serveur de démonstration : environnement vidé (aucune clé lue), aucune synchronisation
 const proc = spawn(process.execPath, ['--no-warnings', 'server.mjs'], {
   cwd: dir,
-  env: { PATH: process.env.PATH, PORT: String(port), SUIVI_PROVIDERS: 'n8n', SUIVI_SYNC_MIN_MINUTES: '1440', SUIVI_DEPARTEMENT_PROCHE: '44', SUIVI_VILLES_PROCHES: 'Nantes,Saint-Herblain', SUIVI_ORIGINES: '47.2184,-1.5536' },
+  env: { PATH: process.env.PATH, PORT: String(port), SUIVI_PROVIDERS: 'n8n', SUIVI_SYNC_MIN_MINUTES: '1440' },
   stdio: 'inherit',
 });
 console.log(`\nDémo : http://localhost:${port}\nDonnées fictives, effacées à l'arrêt (Ctrl+C).\n`);

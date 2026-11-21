@@ -1,10 +1,11 @@
-// Usage : npm run analyse -- [--limite N] [--refaire] [--rapport]
+// Usage : npm run analyse -- [--profil p-xxxxxxxx] [--limite N] [--refaire] [--rapport]
 // Analyse les annonces sans analyse à jour avec le fournisseur choisi dans le .env (ANALYSE_PROVIDER), puis affiche un rapport.
 // --rapport : pas d'appel au modèle, seulement les notes par groupe (offres suivies, ignorées, autres) pour vérifier que la note va dans le bon sens.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { etatAnalyse, fournisseurActif, lancerAnalyse, lireAnalyse, offresAAnalyser, ouvrirAnalyses } from '../lib/analyse/index.mjs';
 import { ouvrirBase } from '../lib/offres.mjs';
+import { avecProfil, profilDefaut } from '../lib/profils.mjs';
 import { chargerEnv } from '../lib/sync.mjs';
 
 // NOTE: les commandes sont dans bin/ ; la base, le .env et data/ sont à la racine du projet
@@ -16,11 +17,20 @@ const valeur = nom => args[args.indexOf(`--${nom}`) + 1];
 chargerEnv(ici);
 const db = ouvrirBase(join(ici, 'suivi.db'));
 ouvrirAnalyses(db);
+// ANCHOR: profil analysé : --profil, sinon le profil par défaut de l'installation (les analyses dépendent du parcours du profil)
+const profil = option('profil') ? String(valeur('profil')) : profilDefaut(db);
+if (!db.prepare('SELECT 1 FROM profils WHERE id = ?').get(profil)) {
+  console.error(`Profil ${profil} introuvable.`);
+  process.exit(1);
+}
 
 function rapport() {
-  const lignes = db.prepare(`SELECT o.ignoree, o.categorie, a.reponses,
-      (SELECT c.statut FROM candidatures c WHERE c.offre_id = o.id_offre LIMIT 1) AS statut
-    FROM offres o JOIN analyses a ON a.id_offre = o.id_offre`).all();
+  // NOTE: depuis la v32, l'état ignorée est dans offre_suivis (par profil), plus dans offres
+  const lignes = db.prepare(`SELECT s.ignoree, o.categorie, a.reponses,
+      (SELECT c.statut FROM candidatures c WHERE c.offre_id = o.id_offre AND c.profil_id = profil_actif() LIMIT 1) AS statut
+    FROM offres o
+    JOIN offre_suivis s ON s.id_offre = o.id_offre AND s.profil_id = profil_actif()
+    JOIN analyses a ON a.id_offre = o.id_offre AND a.profil_id = profil_actif()`).all();
   const groupes = {};
   for (const l of lignes) {
     const note = lireAnalyse(l.reponses)?.note;
@@ -35,7 +45,7 @@ function rapport() {
   }
 }
 
-if (!option('rapport')) {
+async function analyser() {
   let f;
   try {
     f = fournisseurActif();
@@ -49,10 +59,14 @@ if (!option('rapport')) {
   }
   const limite = Number(valeur('limite')) || 0;
   console.log(`${f.nom}, modèle ${f.modele}, ${offresAAnalyser(db, { refaire: option('refaire') }).length} offre(s) à analyser${limite ? ` (limite ${limite})` : ''}.`);
-  const suivi = setInterval(() => process.stdout.write(`\r  ${etatAnalyse.faits}/${etatAnalyse.total}  `), 2000);
+  const suivi = setInterval(() => process.stdout.write(`\r  ${etatAnalyse(db).faits}/${etatAnalyse(db).total}  `), 2000);
   const r = await lancerAnalyse(db, 'ligne de commande', { fournisseur: f, limite, refaire: option('refaire') });
   clearInterval(suivi);
   console.log(`\r${r.ok ? `Terminé : ${r.faits} analysée(s), ${r.echecs} échec(s), ${(r.duree_ms / 1000).toFixed(0)} s.` : `Échec (${r.code}) : ${r.erreur}`}`);
   if (!r.ok) process.exitCode = 1;
 }
-rapport();
+
+await avecProfil(profil, async () => {
+  if (!option('rapport')) await analyser();
+  rapport();
+});

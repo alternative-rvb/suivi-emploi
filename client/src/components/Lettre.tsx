@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, ClipboardCopy, Download, FileText, ListChecks, RefreshCw, Save, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { controlerLettre, ecrireBrouillon, enregistrerMatrice, etatPreparationLettre, exporterLettre, lienVersionLettre, lireBrouillon, preparerLettre, redigerLettre, supprimerVersionLettre } from '../api.ts';
+import { urlApi } from '../profil.ts';
 import { CATEGORIES } from '../constants.ts';
 import { telecharger } from '../exports.ts';
 import { dureeMs } from '../format.ts';
@@ -12,7 +13,7 @@ import BarreEtat, { dateHeure } from './BarreEtat.tsx';
 import { BLOCS_LETTRE, LIBELLES_BLOC, LIMITES_PLATEFORME, lignesEntete, MATRICE_DEFAUT, MOTS_MAX, MOTS_MIN, nomLettre, texteLettre, TONS_LETTRE } from '../../../lib/lettre.mjs';
 import { separerLieu } from '../../../lib/coordonnees.mjs';
 import { norm } from '../../../lib/texte.mjs';
-import { METIERS_CV as METIERS } from '../../../lib/cv.mjs';
+import { metiersAffiches, useMetiers } from '../metiers.ts';
 import type { ControleLettre, LettreBrouillon, LettreMatrice } from '../../../types';
 
 const STATUTS = { ok: 'Conforme', offre: 'Repris de l\'annonce', partiel: 'Partiel', profil: 'Absent du CV de référence, présent au Profil', absent: 'Introuvable : à vérifier' };
@@ -34,13 +35,17 @@ const copieMatrice = (m: LettreMatrice | undefined): LettreMatrice => structured
 // ANCHOR: lettre de motivation (ligne 178) : matrice, brouillon du modèle local, textarea modifiable enregistré sur le serveur, contrôle, exports PDF et Word
 // NOTE: même déroulé que le CV sur mesure ; le texte reste à l'utilisateur (il écrase ce qu'il veut) et Claude peut le réécrire par l'API (PUT /api/lettre/brouillons/:cle)
 // ANCHOR: dernière cible de la lettre, gardée hors du composant : quitter l'onglet CV et lettre démonte la vue, le retour reprend la même lettre (le texte lui-même est enregistré sur le serveur)
-const memoire = { actif: 'generique' as 'generique' | 'sur_mesure', offreId: '', candidatureId: '', metier: METIERS[0] };
+const memoire = { actif: 'generique' as 'generique' | 'sur_mesure', offreId: '', candidatureId: '', metier: metiersAffiches()[0] };
 export default function Lettre({ etat, maj, offres, cible: demande, cibleLue, allerPartie }) {
   const [offreId, setOffreId] = useState(demande ? '' : memoire.offreId);
   const [candidatureId, setCandidatureId] = useState(demande ? '' : memoire.candidatureId);
   // NOTE: comme pour le CV, lettre générique par métier visé (arrivée directe sur l'onglet) ou sur mesure (offre ou candidature)
   const [actif, setActif] = useState<'generique' | 'sur_mesure'>(demande ? 'sur_mesure' : memoire.actif);
-  const [metier, setMetier] = useState(memoire.metier);
+  // NOTE: métier mémorisé supprimé depuis (métier créé, ligne 266) : le premier de la liste dès le premier rendu, sans quoi son libellé manque
+  const [metier, setMetier] = useState(() => (metiersAffiches().includes(memoire.metier) ? memoire.metier : metiersAffiches()[0]));
+  const { affiches: metiers } = useMetiers();
+  // NOTE: métier gardé hors de la liste du profil (liste modifiée) : le premier de la liste le remplace
+  useEffect(() => { if (!metiers.includes(metier)) setMetier(metiers[0]); }, [metiers.join(',')]);
   useEffect(() => { Object.assign(memoire, { actif, offreId, candidatureId, metier }); }, [actif, offreId, candidatureId, metier]);
   const generique = actif === 'generique';
   const cle = generique ? `metier:${metier}` : offreId || candidatureId;
@@ -71,7 +76,7 @@ export default function Lettre({ etat, maj, offres, cible: demande, cibleLue, al
   const candidature = etat.candidatures.find(c => c.id === candidatureId) ?? null;
   useEffect(() => { if (etat.lettreVersions) setVersions(etat.lettreVersions); }, [etat.lettreVersions]);
   // NOTE: la signature se gère dans Profil > Coordonnées : présence relue à l'ouverture de l'onglet
-  useEffect(() => { fetch('/api/signature', { cache: 'no-store' }).then(r => setSignature(r.ok), () => {}); }, []);
+  useEffect(() => { fetch(urlApi('/api/signature'), { cache: 'no-store' }).then(r => setSignature(r.ok), () => {}); }, []);
   useEffect(() => { setLieuDate([separerLieu(contact).ville, `le ${dateDuJour()}`].filter(Boolean).join(', ')); }, [contact.ville, contact.code_postal]);
 
   // NOTE: arrivée depuis une offre ou une candidature : la cible est consommée une fois
@@ -286,7 +291,7 @@ export default function Lettre({ etat, maj, offres, cible: demande, cibleLue, al
         <div className="cv-lateral" ref={lateral}>
           <BlocRepliable id="lettre-generique" titre="Lettres génériques" Icone={FileText} className={generique ? 'cv-actif' : ''} {...depliage('generique')} resume={CATEGORIES[metier].label}>
             <p className="muted small">Une lettre type par métier visé, pour une candidature spontanée ou un formulaire. Claude l'écrit et la réécrit à votre demande.</p>
-            <label className="field">Métier visé<Select value={metier} onChange={e => { setMetier(e.target.value); setActif('generique'); }} options={METIERS.map(m => [m, CATEGORIES[m].label])} /></label>
+            <label className="field">Métier visé<Select value={metier} onChange={e => { setMetier(e.target.value); setActif('generique'); }} options={metiers.map(m => [m, CATEGORIES[m].label])} /></label>
             {!generique && <button type="button" className="btn btn-ghost small" onClick={() => setActif('generique')}>Afficher la lettre générique</button>}
           </BlocRepliable>
 

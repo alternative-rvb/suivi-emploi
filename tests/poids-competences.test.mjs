@@ -1,5 +1,6 @@
 // ANCHOR: poids des compétences par métier (competences.poids, schéma v27) : composition du CV, routes et migration
 import test from 'node:test';
+import { brancherProfils } from '../lib/profils.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -82,6 +83,7 @@ test('migration v27 : colonne competences.poids ajoutée avec sauvegarde, donné
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const ancienne = new DatabaseSync(chemin);
+    brancherProfils(ancienne);
     ancienne.exec("INSERT INTO competences (id, domaine, competence, enseigner, executer) VALUES ('c1', 'Dev', 'Astro', 4, 4)");
     ancienne.exec('ALTER TABLE competences DROP COLUMN poids; PRAGMA user_version = 26');
     ancienne.close();
@@ -175,6 +177,7 @@ test('lieux : migration v28 (formations.lieu), CV avec lieu d\'établissement et
     const chemin = join(dir, 'suivi.db');
     ouvrirBase(chemin).close();
     const ancienne = new DatabaseSync(chemin);
+    brancherProfils(ancienne);
     ancienne.exec("INSERT INTO formations (id, type, titre, etablissement) VALUES ('f1', 'diplome', 'DUT', 'IUT')");
     ancienne.exec('ALTER TABLE formations DROP COLUMN lieu; PRAGMA user_version = 27');
     ancienne.close();
